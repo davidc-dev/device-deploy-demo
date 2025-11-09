@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Device Repo Generator</title>
+</head>
+<body>
+    <h2>Create Device Repository</h2>
+
+    <form action="http://localhost:8000/generate-project" method="POST">
+        <label>Device ID:</label><br>
+        <input type="text" name="device_id" required><br><br>
+
+        <label>Device Name:</label><br>
+        <input type="text" name="device_name" required><br><br>
+
+        <button type="submit">Generate Repo</button>
+    </form>
+</body>
+</html>
