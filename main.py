@@ -193,29 +193,35 @@ def create_device_repo(
 
 
 
-# =====================================================================
-#  ENDPOINT 2: CREATE & APPLY ARGOCD APPLICATION
-# =====================================================================
+# ===============================================================
+# STEP 2:
+# Generate YAML OR Deploy via ArgoCD API
+# ===============================================================
 @app.post("/deploy-argocd-app")
 def deploy_argocd_app(
     repo_url: str = Form(...),
     device_id: str = Form(...),
     device_name: str = Form(...),
-    destination_server: str = Form(...),      # NEW INPUT
-    destination_namespace: str = Form(...),   # NEW INPUT
+    destination_server: str = Form(...),
+    destination_namespace: str = Form(...),
+    cluster_fqdn: str = Form(...),
+
+    use_argocd_api: str = Form("false"),
+
+    argocd_url: str = Form(None),
+    argocd_token: str = Form(None),
+    disable_tls: str = Form("false")   # ✅ REQUIRED
 ):
-    """Step 2: Create ArgoCD Application YAML and optionally apply it."""
 
-    # Updated app name format: device-name_device-id
-    app_name = f"device-{device_name}-{device_id}"
+    app_name = f"device-{device_name}-{device_id}".lower().replace("_", "-")
 
-    # Build ArgoCD Application YAML with dynamic destination values
+    # ✅ Build Argo Application YAML
     argo_yaml = textwrap.dedent(f"""
     apiVersion: argoproj.io/v1alpha1
     kind: Application
     metadata:
       name: {app_name}
-      namespace: {ARGO_NAMESPACE}
+      namespace: openshift-gitops
     spec:
       project: default
       source:
@@ -233,31 +239,101 @@ def deploy_argocd_app(
           - CreateNamespace=true
     """).strip()
 
-    applied = False
-    apply_error = None
+    # =========================================================
+    # OPTION 1: YAML ONLY
+    # =========================================================
+    if use_argocd_api.lower() != "true":
+        return {
+            "status": "yaml_only",
+            "argocd_yaml": argo_yaml,
+            "application_name": app_name
+        }
 
-    # Optionally auto-apply to cluster
-    if AUTO_APPLY_ARGO:
-        try:
-            bin_to_use = "oc"
-            if subprocess.run(["which", "oc"], capture_output=True).returncode != 0:
-                bin_to_use = "kubectl"
 
-            proc = subprocess.run(
-                [bin_to_use, "apply", "-f", "-"],
-                input=argo_yaml.encode(),
-                capture_output=True,
-                check=True
-            )
-            applied = True
+    # =========================================================
+    # OPTION 2: Deploy using ArgoCD REST API
+    # =========================================================
+    if not argocd_url:
+        return {"error": "Missing argocd_url"}
 
-        except subprocess.CalledProcessError as e:
-            apply_error = e.stderr.decode() if e.stderr else str(e)
+    if not argocd_token:
+        return {"error": "Missing argocd_token"}
+
+    # Determine TLS behavior
+    verify_tls = False if disable_tls.lower() == "true" else True
+
+    headers = {
+        "Authorization": f"Bearer {argocd_token}",
+        "Content-Type": "application/json"
+    }
+
+    # ArgoCD JSON payload (same as YAML)
+    app_payload = {
+        "metadata": {
+            "name": app_name,
+            "namespace": "openshift-gitops"
+        },
+        "spec": {
+            "project": "default",
+            "source": {
+                "repoURL": repo_url,
+                "targetRevision": "main",
+                "path": "."
+            },
+            "destination": {
+                "server": destination_server,
+                "namespace": destination_namespace
+            },
+            "syncPolicy": {
+                "automated": {
+                    "prune": True,
+                    "selfHeal": True
+                },
+                "syncOptions": [
+                    "CreateNamespace=true"
+                ]
+            }
+        }
+    }
+
+    # Create application
+    create_url = f"{argocd_url}/api/v1/applications"
+    res = requests.post(
+        create_url,
+        headers=headers,
+        json=app_payload,
+        verify=verify_tls
+    )
+
+    # If exists → update it
+    if res.status_code == 409:
+        update_url = f"{argocd_url}/api/v1/applications/{app_name}"
+        res = requests.put(
+            update_url,
+            headers=headers,
+            json=app_payload,
+            verify=verify_tls
+        )
+
+    if res.status_code >= 300:
+        return {
+            "error": "ArgoCD create/update failed",
+            "details": res.text
+        }
+
+    # Trigger sync
+    sync_url = f"{argocd_url}/api/v1/applications/{app_name}/sync"
+    sync_res = requests.post(
+        sync_url,
+        headers=headers,
+        verify=verify_tls
+    )
 
     return {
-        "status": "success",
-        "argocd_application_name": app_name,
+        "status": "deployed_via_argocd_api",
+        "application_name": app_name,
+        "tls_verification": verify_tls,
         "argocd_yaml": argo_yaml,
-        "applied": applied,
-        "apply_error": apply_error
+        "argocd_api_response": res.text,
+        "argocd_sync_response": sync_res.text
     }

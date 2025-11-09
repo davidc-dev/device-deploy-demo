@@ -12,8 +12,9 @@ export default function DeviceWorkflowApp() {
   const [destinationServer, setDestinationServer] = useState("");
   const [destinationNamespace, setDestinationNamespace] = useState("");
 
-  const [argocdUrl, setArgocdUrl] = useState("");        // NEW
-  const [argocdToken, setArgocdToken] = useState("");    // NEW
+  const [argocdUrl, setArgocdUrl] = useState("");
+  const [argocdToken, setArgocdToken] = useState("");
+  const [disableTlsVerify, setDisableTlsVerify] = useState(false); // NEW TLS toggle
 
   const [argoYaml, setArgoYaml] = useState("");
   const [loading, setLoading] = useState(false);
@@ -52,7 +53,7 @@ export default function DeviceWorkflowApp() {
   };
 
   // --------------------------------------------------------
-  // STEP 2: Generate YAML or Deploy via ArgoCD API
+  // STEP 2: Generate YAML or Deploy via ArgoCD
   // --------------------------------------------------------
   const handleGenerateYaml = async (deploy) => {
     setLoading(true);
@@ -69,8 +70,9 @@ export default function DeviceWorkflowApp() {
 
       if (deploy) {
         formData.append("use_argocd_api", "true");
-        formData.append("argocd_token", argocdToken);
         formData.append("argocd_url", argocdUrl);
+        formData.append("argocd_token", argocdToken);
+        formData.append("disable_tls", disableTlsVerify ? "true" : "false");
       } else {
         formData.append("use_argocd_api", "false");
       }
@@ -93,12 +95,12 @@ export default function DeviceWorkflowApp() {
   };
 
   // --------------------------------------------------------
-  // UI RENDERING
+  // UI
   // --------------------------------------------------------
   return (
     <div className="p-10 max-w-xl mx-auto">
 
-      {/* STEP 1 ------------------------------------------------------- */}
+      {/* STEP 1 */}
       {step === 1 && (
         <div>
           <h1 className="text-3xl font-bold mb-4">Create New Application</h1>
@@ -137,13 +139,11 @@ export default function DeviceWorkflowApp() {
         </div>
       )}
 
-      {/* STEP 2 ------------------------------------------------------- */}
+      {/* STEP 2 */}
       {step === 2 && (
         <div>
           <h1 className="text-3xl font-bold mb-4">Deployment Target</h1>
-          <p className="mb-4 text-gray-600">
-            Step 2: Enter cluster and ArgoCD details.
-          </p>
+          <p className="mb-4 text-gray-600">Step 2: Enter cluster and ArgoCD details.</p>
 
           <label className="block mb-2 font-medium">Cluster API URL</label>
           <input
@@ -159,7 +159,6 @@ export default function DeviceWorkflowApp() {
             onChange={(e) => setDestinationNamespace(e.target.value)}
           />
 
-          {/* NEW: ArgoCD URL */}
           <label className="block mb-2 font-medium">ArgoCD API URL</label>
           <input
             className="w-full p-2 border rounded mb-4"
@@ -168,14 +167,25 @@ export default function DeviceWorkflowApp() {
             onChange={(e) => setArgocdUrl(e.target.value)}
           />
 
-          {/* NEW: ArgoCD Token */}
           <label className="block mb-2 font-medium">ArgoCD Auth Token</label>
           <input
             type="password"
-            className="w-full p-2 border rounded mb-6"
+            className="w-full p-2 border rounded mb-4"
             value={argocdToken}
             onChange={(e) => setArgocdToken(e.target.value)}
           />
+
+          {/* TLS Toggle */}
+          <label className="flex items-center gap-2 mb-6">
+            <input
+              type="checkbox"
+              checked={disableTlsVerify}
+              onChange={(e) => setDisableTlsVerify(e.target.checked)}
+            />
+            <span className="text-sm text-gray-700">
+              Disable TLS verification (insecure)
+            </span>
+          </label>
 
           {error && <p className="text-red-600 mb-4">{error}</p>}
 
@@ -199,7 +209,7 @@ export default function DeviceWorkflowApp() {
         </div>
       )}
 
-      {/* STEP 3 ------------------------------------------------------- */}
+      {/* STEP 3 */}
       {step === 3 && (
         <div>
           <h1 className="text-3xl font-bold mb-4">ArgoCD Deployment YAML</h1>
