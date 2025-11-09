@@ -1,5 +1,14 @@
 import React, { useState } from "react";
 
+// Utility styles (Tailwind-like class names without installing Tailwind)
+const cardBase = "shadow-md rounded-xl p-6 border transition-colors";
+const header = "text-2xl font-semibold mb-3"; // inherits color for dark mode
+const subheader = "mb-6 opacity-80"; // inherits color
+const inputBase = "w-full p-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 mb-4 transition-colors placeholder-opacity-90";
+const btnPrimary = "px-5 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition";
+const btnSecondary = "px-5 py-3 bg-gray-700 hover:bg-gray-800 text-white rounded-lg transition";
+const btnSuccess = "px-5 py-3 bg-green-600 hover:bg-green-700 text-white rounded-lg transition";
+
 export default function DeviceWorkflowApp() {
   const [step, setStep] = useState(1);
 
@@ -9,12 +18,12 @@ export default function DeviceWorkflowApp() {
 
   const [repoUrl, setRepoUrl] = useState("");
 
-  const [destinationServer, setDestinationServer] = useState("");
-  const [destinationNamespace, setDestinationNamespace] = useState("");
+  const [destinationServer, setDestinationServer] = useState("https://kubernetes.default.svc");
+  const [destinationNamespace, setDestinationNamespace] = useState("device-apps");
 
-  const [argocdUrl, setArgocdUrl] = useState("");
+  const [argocdUrl, setArgocdUrl] = useState("");("https://openshift-gitops-server-openshift-gitops.apps.{{CLUSTER_DOMAIN}}");
   const [argocdToken, setArgocdToken] = useState("");
-  const [disableTlsVerify, setDisableTlsVerify] = useState(false); // NEW TLS toggle
+  const [disableTlsVerify, setDisableTlsVerify] = useState(true);
 
   const [argoYaml, setArgoYaml] = useState("");
   const [loading, setLoading] = useState(false);
@@ -22,9 +31,23 @@ export default function DeviceWorkflowApp() {
 
   const API_BASE = "http://localhost:8000";
 
-  // --------------------------------------------------------
-  // STEP 1: Create Device Repo
-  // --------------------------------------------------------
+  // Dark mode toggle
+  const [darkMode, setDarkMode] = useState(false);
+  const pageBg = darkMode ? "bg-gray-900 text-gray-100" : "bg-gray-100 text-gray-900";
+  const cardBg = darkMode ? "bg-gray-800 border-gray-700" : "bg-white border-gray-200";
+  const inputTheme = darkMode
+    ? "bg-gray-700 border-gray-600 text-gray-100 placeholder-gray-300"
+    : "bg-gray-50 border-gray-300 text-gray-900 placeholder-gray-500";
+
+  // Auto-update ArgoCD URL when cluster FQDN changes
+  React.useEffect(() => {
+    // Only auto-fill if user hasn't manually overridden
+    if (clusterFqdn && (argocdUrl === "" || argocdUrl.includes("openshift-gitops-server-openshift-gitops.apps"))) {
+      setArgocdUrl(`https://openshift-gitops-server-openshift-gitops.apps.${clusterFqdn}`);
+    }
+  }, [clusterFqdn]);
+
+  // STEP 1 --------------------------------------------------------
   const handleCreateRepo = async () => {
     setLoading(true);
     setError("");
@@ -37,7 +60,7 @@ export default function DeviceWorkflowApp() {
 
       const res = await fetch(`${API_BASE}/create-device-repo`, {
         method: "POST",
-        body: formData
+        body: formData,
       });
 
       const data = await res.json();
@@ -46,15 +69,12 @@ export default function DeviceWorkflowApp() {
       setRepoUrl(data.repo_url);
       setStep(2);
     } catch (err) {
-      setError(err.message);
+      setError(err instanceof Error ? err.message : String(err));
     }
-
     setLoading(false);
   };
 
-  // --------------------------------------------------------
-  // STEP 2: Generate YAML or Deploy via ArgoCD
-  // --------------------------------------------------------
+  // STEP 2 --------------------------------------------------------
   const handleGenerateYaml = async (deploy) => {
     setLoading(true);
     setError("");
@@ -79,7 +99,7 @@ export default function DeviceWorkflowApp() {
 
       const res = await fetch(`${API_BASE}/deploy-argocd-app`, {
         method: "POST",
-        body: formData
+        body: formData,
       });
 
       const data = await res.json();
@@ -88,145 +108,135 @@ export default function DeviceWorkflowApp() {
       setArgoYaml(data.argocd_yaml);
       setStep(3);
     } catch (err) {
-      setError(err.message);
+      setError(err instanceof Error ? err.message : String(err));
     }
 
     setLoading(false);
   };
 
-  // --------------------------------------------------------
-  // UI
-  // --------------------------------------------------------
   return (
-    <div className="p-10 max-w-xl mx-auto">
-
-      {/* STEP 1 */}
-      {step === 1 && (
-        <div>
-          <h1 className="text-3xl font-bold mb-4">Create New Application</h1>
-          <p className="mb-4 text-gray-600">Step 1: Enter device information.</p>
-
-          <label className="block mb-2 font-medium">Device Name</label>
-          <input
-            className="w-full p-2 border rounded mb-4"
-            value={deviceName}
-            onChange={(e) => setDeviceName(e.target.value)}
-          />
-
-          <label className="block mb-2 font-medium">Device ID</label>
-          <input
-            className="w-full p-2 border rounded mb-4"
-            value={deviceId}
-            onChange={(e) => setDeviceId(e.target.value)}
-          />
-
-          <label className="block mb-2 font-medium">Cluster FQDN</label>
-          <input
-            className="w-full p-2 border rounded mb-6"
-            value={clusterFqdn}
-            onChange={(e) => setClusterFqdn(e.target.value)}
-          />
-
-          {error && <p className="text-red-600 mb-4">{error}</p>}
-
-          <button
-            onClick={handleCreateRepo}
-            disabled={loading}
-            className="px-4 py-2 bg-blue-600 text-white rounded"
-          >
-            {loading ? "Processing..." : "Next: Create Repository"}
-          </button>
-        </div>
-      )}
-
-      {/* STEP 2 */}
-      {step === 2 && (
-        <div>
-          <h1 className="text-3xl font-bold mb-4">Deployment Target</h1>
-          <p className="mb-4 text-gray-600">Step 2: Enter cluster and ArgoCD details.</p>
-
-          <label className="block mb-2 font-medium">Cluster API URL</label>
-          <input
-            className="w-full p-2 border rounded mb-4"
-            value={destinationServer}
-            onChange={(e) => setDestinationServer(e.target.value)}
-          />
-
-          <label className="block mb-2 font-medium">Destination Namespace</label>
-          <input
-            className="w-full p-2 border rounded mb-4"
-            value={destinationNamespace}
-            onChange={(e) => setDestinationNamespace(e.target.value)}
-          />
-
-          <label className="block mb-2 font-medium">ArgoCD API URL</label>
-          <input
-            className="w-full p-2 border rounded mb-4"
-            placeholder="https://argocd-server-openshift-gitops.apps.example.com"
-            value={argocdUrl}
-            onChange={(e) => setArgocdUrl(e.target.value)}
-          />
-
-          <label className="block mb-2 font-medium">ArgoCD Auth Token</label>
-          <input
-            type="password"
-            className="w-full p-2 border rounded mb-4"
-            value={argocdToken}
-            onChange={(e) => setArgocdToken(e.target.value)}
-          />
-
-          {/* TLS Toggle */}
-          <label className="flex items-center gap-2 mb-6">
+    <div className={`min-h-screen w-full p-10 transition ${pageBg}`}>
+      <div className="max-w-2xl mx-auto">
+        {/* Dark Mode Toggle */}
+        <div className="flex justify-end mb-6">
+          <label className="flex items-center gap-2 cursor-pointer">
             <input
               type="checkbox"
-              checked={disableTlsVerify}
-              onChange={(e) => setDisableTlsVerify(e.target.checked)}
+              checked={darkMode}
+              onChange={(e) => setDarkMode(e.target.checked)}
             />
-            <span className="text-sm text-gray-700">
-              Disable TLS verification (insecure)
-            </span>
+            <span className="text-sm">Dark Mode</span>
           </label>
+        </div>
 
-          {error && <p className="text-red-600 mb-4">{error}</p>}
+        {/* STEP 1 ------------------------------------------------------- */}
+        {step === 1 && (
+          <div className={`${cardBase} ${cardBg}`}>
+            <h1 className={header}>Create New Application</h1>
+            <p className={subheader}>Step 1: Enter device information.</p>
 
-          <div className="flex gap-4">
-            <button
-              onClick={() => handleGenerateYaml(false)}
-              disabled={loading}
-              className="px-4 py-2 bg-gray-700 text-white rounded"
-            >
-              Create ArgoCD YAML
-            </button>
+            <label className="font-medium">Device Name</label>
+            <input
+              className={`${inputBase} ${inputTheme}`}
+              value={deviceName}
+              onChange={(e) => setDeviceName(e.target.value)}
+            />
 
-            <button
-              onClick={() => handleGenerateYaml(true)}
-              disabled={loading}
-              className="px-4 py-2 bg-green-600 text-white rounded"
-            >
-              {loading ? "Deploying..." : "Create and Deploy to Cluster"}
+            <label className="font-medium">Device ID</label>
+            <input
+              className={`${inputBase} ${inputTheme}`}
+              value={deviceId}
+              onChange={(e) => setDeviceId(e.target.value)}
+            />
+
+            <label className="font-medium">Cluster FQDN</label>
+            <input
+              className={`${inputBase} ${inputTheme}`}
+              value={clusterFqdn}
+              onChange={(e) => setClusterFqdn(e.target.value)}
+            />
+
+            {error && <p className="text-red-500 mb-4">{error}</p>}
+
+            <button onClick={handleCreateRepo} className={btnPrimary} disabled={loading}>
+              {loading ? "Processing..." : "Next: Create Repository"}
             </button>
           </div>
-        </div>
-      )}
+        )}
 
-      {/* STEP 3 */}
-      {step === 3 && (
-        <div>
-          <h1 className="text-3xl font-bold mb-4">ArgoCD Deployment YAML</h1>
-          <textarea
-            className="w-full h-80 p-3 border rounded font-mono text-sm"
-            readOnly
-            value={argoYaml}
-          />
+        {/* STEP 2 ------------------------------------------------------- */}
+        {step === 2 && (
+          <div className={`${cardBase} ${cardBg}`}>
+            <h1 className={header}>Deployment Target</h1>
+            <p className={subheader}>Step 2: Enter cluster and ArgoCD details.</p>
 
-          <button
-            onClick={() => setStep(1)}
-            className="mt-6 px-4 py-2 bg-blue-600 text-white rounded"
-          >
-            Start Over
-          </button>
-        </div>
-      )}
+            <label className="font-medium">Cluster API URL</label>
+            <input
+              className={`${inputBase} ${inputTheme}`}
+              value={destinationServer}
+              onChange={(e) => setDestinationServer(e.target.value)}
+            />
+
+            <label className="font-medium">Destination Namespace</label>
+            <input
+              className={`${inputBase} ${inputTheme}`}
+              value={destinationNamespace}
+              onChange={(e) => setDestinationNamespace(e.target.value)}
+            />
+
+            <label className="font-medium">ArgoCD API URL</label>
+            <input
+              className={`${inputBase} ${inputTheme}`}
+              value={argocdUrl}
+              onChange={(e) => setArgocdUrl(e.target.value)}
+            />
+
+            <label className="font-medium">ArgoCD Token</label>
+            <input
+              type="password"
+              className={`${inputBase} ${inputTheme}`}
+              value={argocdToken}
+              onChange={(e) => setArgocdToken(e.target.value)}
+            />
+
+            <label className="flex items-center gap-2 mb-4">
+              <input
+                type="checkbox"
+                checked={disableTlsVerify}
+                onChange={(e) => setDisableTlsVerify(e.target.checked)}
+              />
+              <span>Disable TLS verification (insecure)</span>
+            </label>
+
+            {error && <p className="text-red-500 mb-4">{error}</p>}
+
+            <div className="flex gap-4">
+              <button onClick={() => handleGenerateYaml(false)} className={btnSecondary}>
+                Create ArgoCD YAML
+              </button>
+              <button onClick={() => handleGenerateYaml(true)} className={btnSuccess}>
+                {loading ? "Deploying..." : "Create & Deploy"}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* STEP 3 ------------------------------------------------------- */}
+        {step === 3 && (
+          <div className={`${cardBase} ${cardBg}`}>
+            <h1 className={header}>ArgoCD Deployment YAML</h1>
+            <textarea
+              className={`w-full h-80 p-3 border rounded-lg font-mono text-sm ${inputTheme}`}
+              readOnly
+              value={argoYaml}
+            />
+
+            <button onClick={() => setStep(1)} className={`${btnPrimary} mt-6`}>
+              Start Over
+            </button>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
