@@ -1,16 +1,16 @@
 import os
 import shutil
-import tempfile
 import subprocess
+import tempfile
 import textwrap
+from typing import Optional
+from urllib.parse import urlparse, urlunparse
 
+import requests
 from fastapi import FastAPI, Form
 from fastapi.middleware.cors import CORSMiddleware
-import requests
-
 
 app = FastAPI()
-
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -18,185 +18,164 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-
-# -----------------------------
-# GLOBAL CONFIG
-# -----------------------------
+# --- Config ---
 GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
-GITHUB_USERNAME = "davidc-dev"
-TEMPLATE_REPO = "https://github.com/davidc-dev/deploy-template-bgdk-yaml.git"
-
-ARGO_NAMESPACE = "openshift-gitops"
-ARGO_DEST_NAMESPACE = "device-apps"
-ARGO_DEST_SERVER = "https://kubernetes.default.svc"  # Given by you
-
-# If true, will run oc/kubectl to apply the ArgoCD Application
-AUTO_APPLY_ARGO = os.getenv("APPLY_ARGO", "false").lower() in ("1", "true", "yes")
+GITHUB_USERNAME = os.getenv("GITHUB_USERNAME", "davidc-dev")
+TEMPLATE_REPO = os.getenv("TEMPLATE_REPO", "https://github.com/davidc-dev/deploy-template-bgdk-yaml.git")
 
 
-# =====================================================================
-#  ENDPOINT 1: CREATE GITHUB DEVICE REPOSITORY
-# =====================================================================
+# ---------- Helpers ----------
+
+def _git(*args, cwd: Optional[str] = None):
+    subprocess.run(["git", *args], check=True, cwd=cwd)
+
+
+def _patch_placeholders(root_dir: str, replacements: dict):
+    files = [
+        "bgd-configmaps.yaml",
+        "bgd-deployment.yaml",
+        "bgd-pvc.yaml",
+        "bgd-route.yaml",
+        "bgd-svc.yaml",
+    ]
+    for rel in files:
+        path = os.path.join(root_dir, rel)
+        if not os.path.exists(path):
+            continue
+        with open(path, "r", encoding="utf-8") as f:
+            content = f.read()
+        for key, val in replacements.items():
+            content = content.replace(key, val)
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(content)
+
+
+def _build_argocd_app_yaml(app_name: str, repo_url: str, dest_server: str, dest_namespace: str):
+    return f"""
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: {app_name}
+  namespace: openshift-gitops
+spec:
+  project: default
+  source:
+    repoURL: {repo_url}
+    targetRevision: HEAD
+    path: .
+  destination:
+    server: {dest_server}
+    namespace: {dest_namespace}
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+    - CreateNamespace=true
+    """.strip()
+
+
+def _write_devfile(repo_dir: str, repo_name: str, repo_url: str):
+    devfile = textwrap.dedent(
+        f"""
+        schemaVersion: 2.2.0
+        metadata:
+          name: {repo_name[:63]}
+        attributes:
+          controller.devfile.io/editor: che-code
+        components:
+          - name: dev-tools
+            container:
+              image: quay.io/devspaces/udi-rhel8:latest
+              memoryLimit: 2Gi
+              mountSources: true
+        commands:
+          - id: git-config
+            exec:
+              component: dev-tools
+              workingDir: /projects
+              commandLine: |
+                git config --global user.name "Device Workflow Bot" && \\
+                git config --global user.email "auto@example.com"
+              label: Configure Git
+        events:
+          postStart:
+            - git-config
+        projects:
+          - name: {repo_name[:63]}
+            git:
+              remotes:
+                origin: {repo_url}
+        """
+    ).strip()
+    with open(os.path.join(repo_dir, "devfile.yaml"), "w", encoding="utf-8") as f:
+        f.write(devfile + "\n")
+
+
+# ---------- Endpoints ----------
 @app.post("/create-device-repo")
 def create_device_repo(
     device_id: str = Form(...),
     device_name: str = Form(...),
-    cluster_fqdn: str = Form(...)  
+    cluster_fqdn: str = Form(""),
 ):
-    """Step 1: Clone template → modify file → create GitHub repo → push."""
-
     if not GITHUB_TOKEN:
-        return {"error": "GITHUB_TOKEN environment variable not set"}
+        return {"error": "GITHUB_TOKEN not set"}
 
-    # 1. Working directory
-    temp_dir = tempfile.mkdtemp()
-
+    temp_dir = tempfile.mkdtemp(prefix="device-")
+    repo_dir = os.path.join(temp_dir, "repo")
     try:
-        # ---------------------------------------------------
-        # 2. Clone template repo
-        # ---------------------------------------------------
-        clone_proc = subprocess.run(
-            ["git", "clone", TEMPLATE_REPO, temp_dir],
-            capture_output=True,
-            text=True
-        )
-        if clone_proc.returncode != 0:
-            shutil.rmtree(temp_dir)
-            return {
-                "error": "git clone failed",
-                "details": clone_proc.stderr
-            }
+        # 1) Clone template
+        _git("clone", TEMPLATE_REPO, repo_dir)
 
-       # ---------------------------------------------------
-        # 3. Modify all template files
-        # ---------------------------------------------------
-        files_to_update = [
-            "bgd-configmaps.yaml",
-            "bgd-deployment.yaml",
-            "bgd-route.yaml",
-            "bgd-svc.yaml"
-        ]
-
-        for filename in files_to_update:
-            filepath = os.path.join(temp_dir, filename)
-
-            if not os.path.isfile(filepath):
-                shutil.rmtree(temp_dir)
-                return {"error": f"Template file not found: {filename}"}
-
-            with open(filepath, "r") as f:
-                content = f.read()
-
-            # Verify DEVICE placeholders
-            if "{{DEVICE_ID}}" not in content or "{{DEVICE_NAME}}" not in content:
-                shutil.rmtree(temp_dir)
-                return {
-                    "error": f"Missing DEVICE placeholders in {filename}"
-                }
-
-            # Replace DEVICE placeholders
-            updated_content = (
-                content
-                .replace("{{DEVICE_ID}}", device_id)
-                .replace("{{DEVICE_NAME}}", device_name)
-            )
-
-            # Special handling: bgd-route.yaml also needs CLUSTER_FQDN
-            if filename == "bgd-route.yaml":
-                if "{{CLUSTER_FQDN}}" not in updated_content:
-                    shutil.rmtree(temp_dir)
-                    return {
-                        "error": "Missing {{CLUSTER_FQDN}} in bgd-route.yaml"
-                    }
-
-                updated_content = updated_content.replace("{{CLUSTER_FQDN}}", cluster_fqdn)
-
-            with open(filepath, "w") as f:
-                f.write(updated_content)
-
-        # ---------------------------------------------------
-        # 4. Create GitHub repo
-        # ---------------------------------------------------
-        new_repo_name = f"device-{device_id}"
-        repo_payload = {
-            "name": new_repo_name,
-            "description": f"Auto-generated repo for device {device_id}",
-            "private": False,
+        # 2) Replace placeholders
+        replacements = {
+            "{{DEVICE_ID}}": device_id,
+            "{{DEVICE_NAME}}": device_name,
         }
+        repo_name = f"device-{device_name}-{device_id}".replace("_", "-")
+        if cluster_fqdn:
+            # route fqdn placeholder (if present)
+            replacements["{{CLUSTER_FQDN}}"] = cluster_fqdn
+        _patch_placeholders(repo_dir, replacements)
+
+        # 3) Create the new repo
         headers = {
             "Authorization": f"token {GITHUB_TOKEN}",
             "Accept": "application/vnd.github+json",
         }
+        payload = {"name": repo_name, "description": f"Auto-generated for {device_name} ({device_id})", "private": False}
+        r = requests.post("https://api.github.com/user/repos", json=payload, headers=headers)
+        if r.status_code >= 300:
+            return {"error": f"GitHub repo creation failed: {r.text}"}
+        new_repo_clone_url = r.json()["clone_url"]
 
-        gh_resp = requests.post(
-            "https://api.github.com/user/repos",
-            json=repo_payload,
-            headers=headers
+        # 3.5) Generate devfile referencing the remote
+        _write_devfile(repo_dir, repo_name, new_repo_clone_url)
+
+        # 4) Push content
+        # ensure human readable identity
+        _git("config", "user.email", "auto@example.com", cwd=repo_dir)
+        _git("config", "user.name", "Device Workflow Bot", cwd=repo_dir)
+        _git("remote", "remove", "origin", cwd=repo_dir)
+
+        parsed = urlparse(new_repo_clone_url)
+        token_netloc = f"{GITHUB_USERNAME}:{GITHUB_TOKEN}@{parsed.hostname}"
+        authed_url = urlunparse(
+            (parsed.scheme, token_netloc, parsed.path, parsed.params, parsed.query, parsed.fragment)
         )
 
-        if gh_resp.status_code >= 300:
-            shutil.rmtree(temp_dir)
-            return {
-                "error": "GitHub repo creation failed",
-                "details": gh_resp.text
-            }
+        _git("remote", "add", "origin", authed_url, cwd=repo_dir)
+        _git("add", ".", cwd=repo_dir)
+        _git("commit", "-m", "Initial commit", cwd=repo_dir)
+        _git("branch", "-M", "main", cwd=repo_dir)
+        _git("push", "-u", "origin", "main", cwd=repo_dir)
 
-        new_repo_url = gh_resp.json()["clone_url"]
-
-        # ---------------------------------------------------
-        # 5. Commit + push
-        # ---------------------------------------------------
-        subprocess.run(["git", "-C", temp_dir, "config", "user.email", "auto@example.com"])
-        subprocess.run(["git", "-C", temp_dir, "config", "user.name", "Auto Commit"])
-
-        subprocess.run(["git", "-C", temp_dir, "add", "."], check=True)
-
-        commit_proc = subprocess.run(
-            ["git", "-C", temp_dir, "commit", "-m", "Initial commit"],
-            capture_output=True,
-            text=True
-        )
-
-        if commit_proc.returncode != 0:
-            # fallback empty commit
-            subprocess.run(
-                ["git", "-C", temp_dir, "commit", "--allow-empty", "-m", "Initial commit"],
-                check=True
-            )
-
-        subprocess.run(
-            ["git", "-C", temp_dir, "remote", "add", "neworigin", new_repo_url],
-            check=True
-        )
-        push_proc = subprocess.run(
-            ["git", "-C", temp_dir, "push", "neworigin", "HEAD:main"],
-            capture_output=True,
-            text=True
-        )
-
-        if push_proc.returncode != 0:
-            shutil.rmtree(temp_dir)
-            return {
-                "error": "Push failed",
-                "details": push_proc.stderr
-            }
-
-        return {
-            "status": "success",
-            "repo_url": new_repo_url,
-            "device_id": device_id,
-            "device_name": device_name
-        }
-
+        return {"status": "ok", "repo_url": new_repo_clone_url, "repo_name": repo_name}
     finally:
-        shutil.rmtree(temp_dir)
+        shutil.rmtree(temp_dir, ignore_errors=True)
 
 
-
-# ===============================================================
-# STEP 2:
-# Generate YAML OR Deploy via ArgoCD API
-# ===============================================================
 @app.post("/deploy-argocd-app")
 def deploy_argocd_app(
     repo_url: str = Form(...),
@@ -204,136 +183,115 @@ def deploy_argocd_app(
     device_name: str = Form(...),
     destination_server: str = Form(...),
     destination_namespace: str = Form(...),
-    cluster_fqdn: str = Form(...),
-
+    cluster_fqdn: str = Form(""),
     use_argocd_api: str = Form("false"),
-
-    argocd_url: str = Form(None),
-    argocd_token: str = Form(None),
-    disable_tls: str = Form("false")   # ✅ REQUIRED
+    argocd_url: str = Form(""),
+    argocd_token: str = Form(""),
+    disable_tls: str = Form("false"),
 ):
+    app_name = f"device-{device_name}-{device_id}".replace("_", "-")
+    yaml = _build_argocd_app_yaml(app_name, repo_url, destination_server, destination_namespace)
 
-    app_name = f"device-{device_name}-{device_id}".lower().replace("_", "-")
+    if use_argocd_api and use_argocd_api.strip().lower() in ("1", "true", "yes"):
+        use_api = True
+    else:
+        use_api = False
 
-    # ✅ Build Argo Application YAML
-    argo_yaml = textwrap.dedent(f"""
-    apiVersion: argoproj.io/v1alpha1
-    kind: Application
-    metadata:
-      name: {app_name}
-      namespace: openshift-gitops
-    spec:
-      project: default
-      source:
-        repoURL: {repo_url}
-        targetRevision: main
-        path: .
-      destination:
-        server: {destination_server}
-        namespace: {destination_namespace}
-      syncPolicy:
-        automated:
-          prune: true
-          selfHeal: true
-        syncOptions:
-          - CreateNamespace=true
-    """).strip()
+    if not use_api:
+        return {"status": "yaml_only", "argocd_yaml": yaml, "app_name": app_name}
 
-    # =========================================================
-    # OPTION 1: YAML ONLY
-    # =========================================================
-    if use_argocd_api.lower() != "true":
-        return {
-            "status": "yaml_only",
-            "argocd_yaml": argo_yaml,
-            "application_name": app_name
-        }
-
-
-    # =========================================================
-    # OPTION 2: Deploy using ArgoCD REST API
-    # =========================================================
     if not argocd_url:
-        return {"error": "Missing argocd_url"}
-
+        return {"error": "Missing argocd_url", "argocd_yaml": yaml}
     if not argocd_token:
-        return {"error": "Missing argocd_token"}
+        return {"error": "Missing argocd_token", "argocd_yaml": yaml}
 
-    # Determine TLS behavior
     verify_tls = False if disable_tls.lower() == "true" else True
 
+    # Argo CD create/update via Application API (upsert)
+    # POST /api/v1/applications (create), or use PATCH if exists. We'll try create; if 409, try update.
     headers = {
         "Authorization": f"Bearer {argocd_token}",
-        "Content-Type": "application/json"
+        "Content-Type": "application/json",
     }
-
-    # ArgoCD JSON payload (same as YAML)
-    app_payload = {
-        "metadata": {
-            "name": app_name,
-            "namespace": "openshift-gitops"
-        },
+    create_url = argocd_url.rstrip("/") + "/api/v1/applications"
+    payload = {
+        "metadata": {"name": app_name, "namespace": "openshift-gitops"},
         "spec": {
             "project": "default",
-            "source": {
-                "repoURL": repo_url,
-                "targetRevision": "main",
-                "path": "."
-            },
-            "destination": {
-                "server": destination_server,
-                "namespace": destination_namespace
-            },
-            "syncPolicy": {
-                "automated": {
-                    "prune": True,
-                    "selfHeal": True
-                },
-                "syncOptions": [
-                    "CreateNamespace=true"
-                ]
-            }
-        }
+            "source": {"repoURL": repo_url, "targetRevision": "HEAD", "path": "."},
+            "destination": {"server": destination_server, "namespace": destination_namespace},
+            "syncPolicy": {"automated": {"prune": True, "selfHeal": True}, "syncOptions": ["CreateNamespace=true"]},
+        },
     }
 
-    # Create application
-    create_url = f"{argocd_url}/api/v1/applications"
-    res = requests.post(
-        create_url,
-        headers=headers,
-        json=app_payload,
-        verify=verify_tls
-    )
+    r = requests.post(create_url, json=payload, headers=headers, verify=verify_tls)
+    if r.status_code == 409:
+        # Already exists -> update
+        upsert_url = argocd_url.rstrip("/") + f"/api/v1/applications/{app_name}"
+        r = requests.put(upsert_url, json=payload, headers=headers, verify=verify_tls)
 
-    # If exists → update it
-    if res.status_code == 409:
-        update_url = f"{argocd_url}/api/v1/applications/{app_name}"
-        res = requests.put(
-            update_url,
-            headers=headers,
-            json=app_payload,
-            verify=verify_tls
-        )
-
-    if res.status_code >= 300:
-        return {
-            "error": "ArgoCD create/update failed",
-            "details": res.text
-        }
-
-    # Trigger sync
-    sync_url = f"{argocd_url}/api/v1/applications/{app_name}/sync"
-    sync_res = requests.post(
-        sync_url,
-        headers=headers,
-        verify=verify_tls
-    )
+    if r.status_code >= 300:
+        return {"error": f"ArgoCD API error: {r.status_code} {r.text}", "argocd_yaml": yaml, "app_name": app_name}
 
     return {
-        "status": "deployed_via_argocd_api",
-        "application_name": app_name,
-        "tls_verification": verify_tls,
-        "argocd_yaml": argo_yaml,
-        "argocd_api_response": res.text,
-        "argocd_sync_response": sync_res.text
+        "status": "deployed",
+        "argocd_yaml": yaml,
+        "app_name": app_name,
+        "argocd_response": r.text,
     }
+
+
+# ---- ArgoCD proxy: list apps ----
+@app.post("/argocd/apps")
+def argocd_list_apps(
+    argocd_url: str = Form(...),
+    argocd_token: str = Form(...),
+    disable_tls: str = Form("false"),
+):
+    headers = {"Authorization": f"Bearer {argocd_token}"}
+    url = argocd_url.rstrip("/") + "/api/v1/applications"
+    verify = False if disable_tls.lower() == "true" else True
+    resp = requests.get(url, headers=headers, verify=verify)
+    if resp.status_code >= 300:
+        return {"error": f"ArgoCD API error: {resp.status_code} {resp.text}"}
+
+    data = resp.json() or {}
+    items = data.get("items") if isinstance(data, dict) else data
+    out = []
+    for it in items or []:
+        meta = it.get("metadata", {})
+        spec = it.get("spec", {})
+        status = it.get("status", {})
+        dest = spec.get("destination", {})
+        src = spec.get("source", {})
+        out.append({
+            "appName": meta.get("name"),
+            "namespace": dest.get("namespace"),
+            "cluster": dest.get("server"),
+            "repoUrl": src.get("repoURL"),
+            "syncStatus": (status.get("sync", {}) or {}).get("status"),
+            "health": (status.get("health", {}) or {}).get("status"),
+            "lastSync": (status.get("operationState", {}) or {}).get("finishedAt"),
+        })
+    return {"apps": out}
+
+
+# ---- ArgoCD proxy: manual sync ----
+@app.post("/argocd/sync")
+def argocd_sync(
+    argocd_url: str = Form(...),
+    argocd_token: str = Form(...),
+    app_name: str = Form(...),
+    disable_tls: str = Form("false"),
+):
+    verify = False if disable_tls.lower() == "true" else True
+    headers = {
+        "Authorization": f"Bearer {argocd_token}",
+        "Content-Type": "application/json",
+    }
+    url = argocd_url.rstrip("/") + f"/api/v1/applications/{app_name}/sync"
+    payload = {"prune": True, "dryRun": False, "strategy": {"hook": {}}}
+    r = requests.post(url, json=payload, headers=headers, verify=verify)
+    if r.status_code >= 300:
+        return {"error": f"ArgoCD API error: {r.status_code} {r.text}"}
+    return {"status": "ok"}
