@@ -1,0 +1,4 @@
+venv/
+frontend-workflow-app/node_modules
+__pycache__
+.env
