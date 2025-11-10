@@ -6,7 +6,7 @@ Single-page workflow (React + Vite) that:
 2. Generates or deploys an ArgoCD Application for that repo.
 3. Displays an ArgoCD-backed device dashboard with Repo / ArgoCD / Dev Spaces / Route / Sync shortcuts.
 
-Backend: FastAPI service in repo root (`main.py`) — runs at `http://localhost:8000` by default.
+Backend: FastAPI service in `backend/main.py` — runs at `http://localhost:8000` by default.
 
 ## Prerequisites
 
@@ -18,9 +18,10 @@ Backend: FastAPI service in repo root (`main.py`) — runs at `http://localhost:
 
 ## Quick Start
 
-Backend (from repo root):
+Backend:
 
 ```bash
+cd backend
 export GITHUB_TOKEN=<pat>
 uvicorn main:app --reload
 ```
