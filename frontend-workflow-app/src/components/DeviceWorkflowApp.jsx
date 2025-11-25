@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useState } from "react";
 import DeviceDashboard from "./DeviceDashboard";
 
 const cardBaseWF = "shadow-md rounded-xl p-6 border transition-colors";
@@ -27,10 +27,6 @@ export default function DeviceWorkflowApp() {
   const [destinationServer, setDestinationServer] = useState("https://kubernetes.default.svc");
   const [destinationNamespace, setDestinationNamespace] = useState("");
 
-  const [argocdUrl, setArgocdUrl] = useState("");
-  const [argocdToken, setArgocdToken] = useState("");
-  const [disableTlsVerify, setDisableTlsVerify] = useState(false);
-
   const [argoYaml, setArgoYaml] = useState("");
   const [deploymentStatus, setDeploymentStatus] = useState("");
   const [argoApiResponse, setArgoApiResponse] = useState("");
@@ -39,17 +35,12 @@ export default function DeviceWorkflowApp() {
 
   const runtimeConfig = typeof window !== "undefined" ? window.__APP_CONFIG__ || {} : {};
   const API_BASE = runtimeConfig.apiBaseUrl || import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
+  const ARGOCD_UI_BASE = runtimeConfig.argocdUrl || "";
 
   const [darkMode, setDarkMode] = useState(false);
   const pageBg = darkMode ? "bg-gray-900 text-gray-100" : "bg-gray-100 text-gray-900";
   const cardBg = darkMode ? "bg-gray-800 border-gray-700" : "bg-white border-gray-200";
   const inputTheme = darkMode ? "bg-gray-700 border-gray-600 text-gray-100 placeholder-gray-300" : "bg-gray-50 border-gray-300 text-gray-900 placeholder-gray-500";
-
-  useEffect(() => {
-    if (clusterFqdn && (argocdUrl === "" || argocdUrl.includes("openshift-gitops-server-openshift-gitops.apps"))) {
-      setArgocdUrl(`https://openshift-gitops-server-openshift-gitops.apps.${clusterFqdn}`);
-    }
-  }, [clusterFqdn]);
 
   const handleCreateRepo = async () => {
     setLoading(true);
@@ -99,9 +90,6 @@ export default function DeviceWorkflowApp() {
 
       if (deploy) {
         formData.append("use_argocd_api", "true");
-        formData.append("argocd_url", argocdUrl);
-        formData.append("argocd_token", argocdToken);
-        formData.append("disable_tls", disableTlsVerify ? "true" : "false");
       } else {
         formData.append("use_argocd_api", "false");
       }
@@ -201,17 +189,6 @@ export default function DeviceWorkflowApp() {
                 <label className="font-medium">Destination Namespace</label>
                 <input className={`${inputWF} ${inputTheme}`} value={destinationNamespace} onChange={(e) => setDestinationNamespace(e.target.value)} />
 
-                <label className="font-medium">ArgoCD API URL</label>
-                <input className={`${inputWF} ${inputTheme}`} value={argocdUrl} onChange={(e) => setArgocdUrl(e.target.value)} />
-
-                <label className="font-medium">ArgoCD Token</label>
-                <input type="password" className={`${inputWF} ${inputTheme}`} value={argocdToken} onChange={(e) => setArgocdToken(e.target.value)} />
-
-                <label className="flex items-center gap-2 mb-4">
-                  <input type="checkbox" checked={disableTlsVerify} onChange={(e) => setDisableTlsVerify(e.target.checked)} />
-                  <span>Disable TLS verification (insecure)</span>
-                </label>
-
                 {error && <p className="text-red-500 mb-4">{error}</p>}
 
                 <div className="flex gap-4">
@@ -263,10 +240,9 @@ export default function DeviceWorkflowApp() {
         {view === "dashboard" && (
           <DeviceDashboard
             darkMode={darkMode}
-            argocdUrl={argocdUrl}
-            argocdToken={argocdToken}
-            disableTlsVerify={disableTlsVerify}
             defaultClusterFqdn={clusterFqdn}
+            apiBase={API_BASE}
+            argocdUiUrl={ARGOCD_UI_BASE}
           />
         )}
       </div>

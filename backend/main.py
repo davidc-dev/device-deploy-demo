@@ -21,6 +21,9 @@ app.add_middleware(
 # --- Config ---
 GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
 GITHUB_USERNAME = os.getenv("GITHUB_USERNAME", "davidc-dev")
+ARGOCD_URL = os.getenv("ARGOCD_URL")
+ARGOCD_TOKEN = os.getenv("ARGOCD_TOKEN")
+ARGOCD_DISABLE_TLS = os.getenv("ARGOCD_DISABLE_TLS", "false")
 
 
 # ---------- Helpers ----------
@@ -89,6 +92,17 @@ def _write_devfile(repo_dir: str, repo_name: str, repo_url: str):
     ).strip()
     with open(os.path.join(repo_dir, "devfile.yaml"), "w", encoding="utf-8") as f:
         f.write(devfile + "\n")
+
+
+def _argocd_creds():
+    if not ARGOCD_URL or not ARGOCD_TOKEN:
+        raise RuntimeError("ARGOCD_URL / ARGOCD_TOKEN not configured")
+    return ARGOCD_URL, ARGOCD_TOKEN
+
+
+def _should_verify_tls(override: Optional[str] = None):
+    flag = override if override not in (None, "") else ARGOCD_DISABLE_TLS
+    return False if str(flag).lower() in ("true", "1", "yes", "on") else True
 
 
 def _download_helm_chart(temp_dir: str, repo_dir: str, repo_url: str, chart_version: str = "", chart_name: str = ""):
@@ -241,9 +255,6 @@ def deploy_argocd_app(
     destination_namespace: str = Form(...),
     cluster_fqdn: str = Form(""),
     use_argocd_api: str = Form("false"),
-    argocd_url: str = Form(""),
-    argocd_token: str = Form(""),
-    disable_tls: str = Form("false"),
 ):
     app_name = f"device-{device_name}-{device_id}".replace("_", "-")
     yaml = _build_argocd_app_yaml(app_name, repo_url, destination_server, destination_namespace)
@@ -256,12 +267,12 @@ def deploy_argocd_app(
     if not use_api:
         return {"status": "yaml_only", "argocd_yaml": yaml, "app_name": app_name}
 
-    if not argocd_url:
-        return {"error": "Missing argocd_url", "argocd_yaml": yaml}
-    if not argocd_token:
-        return {"error": "Missing argocd_token", "argocd_yaml": yaml}
+    try:
+        argocd_url, argocd_token = _argocd_creds()
+    except RuntimeError as exc:
+        return {"error": str(exc), "argocd_yaml": yaml}
 
-    verify_tls = False if disable_tls.lower() == "true" else True
+    verify_tls = _should_verify_tls()
 
     # Argo CD create/update via Application API (upsert)
     # POST /api/v1/applications (create), or use PATCH if exists. We'll try create; if 409, try update.
@@ -299,14 +310,14 @@ def deploy_argocd_app(
 
 # ---- ArgoCD proxy: list apps ----
 @app.post("/argocd/apps")
-def argocd_list_apps(
-    argocd_url: str = Form(...),
-    argocd_token: str = Form(...),
-    disable_tls: str = Form("false"),
-):
+def argocd_list_apps():
+    try:
+        argocd_url, argocd_token = _argocd_creds()
+    except RuntimeError as exc:
+        return {"error": str(exc)}
     headers = {"Authorization": f"Bearer {argocd_token}"}
     url = argocd_url.rstrip("/") + "/api/v1/applications"
-    verify = False if disable_tls.lower() == "true" else True
+    verify = _should_verify_tls()
     resp = requests.get(url, headers=headers, verify=verify)
     if resp.status_code >= 300:
         return {"error": f"ArgoCD API error: {resp.status_code} {resp.text}"}
@@ -335,12 +346,13 @@ def argocd_list_apps(
 # ---- ArgoCD proxy: manual sync ----
 @app.post("/argocd/sync")
 def argocd_sync(
-    argocd_url: str = Form(...),
-    argocd_token: str = Form(...),
     app_name: str = Form(...),
-    disable_tls: str = Form("false"),
 ):
-    verify = False if disable_tls.lower() == "true" else True
+    try:
+        argocd_url, argocd_token = _argocd_creds()
+    except RuntimeError as exc:
+        return {"error": str(exc)}
+    verify = _should_verify_tls()
     headers = {
         "Authorization": f"Bearer {argocd_token}",
         "Content-Type": "application/json",

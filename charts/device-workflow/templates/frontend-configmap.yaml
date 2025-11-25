@@ -9,5 +9,6 @@ metadata:
 data:
   env-config.js: |
     window.__APP_CONFIG__ = window.__APP_CONFIG__ || {
-      apiBaseUrl: "{{ .Values.frontend.config.apiBaseUrl }}"
+      apiBaseUrl: "{{ .Values.frontend.config.apiBaseUrl }}",
+      argocdUrl: "{{ .Values.frontend.config.argocdUrl }}"
     };

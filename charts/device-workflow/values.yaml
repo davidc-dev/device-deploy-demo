@@ -25,6 +25,7 @@ frontend:
     targetPort: 8080
   config:
     apiBaseUrl: "http://device-workflow-backend.default.svc.cluster.local"
+    argocdUrl: ""
   resources: {}
   replicas: 1
 

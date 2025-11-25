@@ -18,10 +18,9 @@ const parseDeviceFields = (appName) => {
 
 export default function DeviceDashboard({
   darkMode,
-  argocdUrl,
-  argocdToken,
-  disableTlsVerify = false,
   defaultClusterFqdn = "",
+  apiBase,
+  argocdUiUrl = "",
 }) {
   const [devices, setDevices] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -32,49 +31,23 @@ export default function DeviceDashboard({
   const [page, setPage] = useState(1);
   const pageSize = 8;
 
-  const [formValues, setFormValues] = useState({
-    url: argocdUrl || "",
-    token: argocdToken || "",
-    disableTls: disableTlsVerify,
-    clusterFqdn: defaultClusterFqdn || "",
-  });
-  const [connection, setConnection] = useState({
-    url: argocdUrl || "",
-    token: argocdToken || "",
-    disableTls: disableTlsVerify,
-    clusterFqdn: defaultClusterFqdn || "",
-  });
+  const [clusterFqdnInput, setClusterFqdnInput] = useState(defaultClusterFqdn || "");
+  const [clusterFqdn, setClusterFqdn] = useState(defaultClusterFqdn || "");
+  const [connected, setConnected] = useState(false);
+  const runtimeConfig = typeof window !== "undefined" ? window.__APP_CONFIG__ || {} : {};
+  const resolvedApiBase = apiBase || runtimeConfig.apiBaseUrl || "http://localhost:8000";
+  const resolvedArgoUiUrl = argocdUiUrl || runtimeConfig.argocdUrl || "";
 
   useEffect(() => {
-    setFormValues({
-      url: argocdUrl || "",
-      token: argocdToken || "",
-      disableTls: disableTlsVerify,
-      clusterFqdn: defaultClusterFqdn || "",
-    });
-    setConnection({
-      url: argocdUrl || "",
-      token: argocdToken || "",
-      disableTls: disableTlsVerify,
-      clusterFqdn: defaultClusterFqdn || "",
-    });
-  }, [argocdUrl, argocdToken, disableTlsVerify, defaultClusterFqdn]);
+    setClusterFqdnInput(defaultClusterFqdn || "");
+    setClusterFqdn(defaultClusterFqdn || "");
+  }, [defaultClusterFqdn]);
 
-  const fetchDevices = useCallback(async (creds) => {
-    if (!creds.url || !creds.token) return;
+  const fetchDevices = useCallback(async () => {
     setLoading(true);
     setError("");
     try {
-      console.debug("Connecting with", creds);
-      const form = new FormData();
-      form.append("argocd_url", creds.url);
-      form.append("argocd_token", creds.token);
-      form.append("disable_tls", creds.disableTls ? "true" : "false");
-
-      const res = await fetch("http://localhost:8000/argocd/apps", {
-        method: "POST",
-        body: form,
-      });
+      const res = await fetch(`${resolvedApiBase}/argocd/apps`, { method: "POST" });
 
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
@@ -92,23 +65,25 @@ export default function DeviceDashboard({
           syncStatus: app.sync,
           lastSync: app.lastSync,
           repoUrl: app.repoUrl || "#",
-          clusterFqdn: app.clusterFqdn || creds.clusterFqdn || "",
+          clusterFqdn: app.clusterFqdn || clusterFqdn || "",
           appName: applicationName,
           name: applicationName,
         };
       });
 
       setDevices(normalized);
+      setConnected(true);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
+      setConnected(false);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [resolvedApiBase, clusterFqdn]);
 
   useEffect(() => {
-    fetchDevices(connection);
-  }, [connection, fetchDevices]);
+    fetchDevices();
+  }, [fetchDevices]);
 
   const filtered = useMemo(() => {
     let data = devices;
@@ -143,14 +118,10 @@ export default function DeviceDashboard({
 
   const onSync = async (appName) => {
     try {
-      console.debug("Syncing with", connection, "app:", appName);
       const form = new FormData();
-      form.append("argocd_url", connection.url);
-      form.append("argocd_token", connection.token);
       form.append("app_name", appName);
-      form.append("disable_tls", connection.disableTls ? "true" : "false");
 
-      await fetch("http://localhost:8000/argocd/sync", {
+      await fetch(`${resolvedApiBase}/argocd/sync`, {
         method: "POST",
         body: form,
       });
@@ -159,16 +130,10 @@ export default function DeviceDashboard({
     }
   };
 
-  const handleConnect = () => {
-    setConnection({
-      url: formValues.url.trim(),
-      token: formValues.token.trim(),
-      disableTls: formValues.disableTls,
-      clusterFqdn: formValues.clusterFqdn.trim(),
-    });
+  const applyClusterSettings = () => {
+    setClusterFqdn(clusterFqdnInput.trim());
   };
-
-  const connectionReady = Boolean(connection.url && connection.token);
+  const handleRefresh = () => fetchDevices();
   const controlChrome = darkMode ? "bg-gray-900 border-gray-700 text-gray-100" : "bg-gray-50 border-gray-200 text-gray-900";
   const inputChrome = darkMode
     ? "bg-gray-800 border-gray-600 text-gray-100 placeholder-gray-400"
@@ -182,62 +147,34 @@ export default function DeviceDashboard({
         <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
           <div>
             <p className="text-lg font-medium">ArgoCD connection</p>
-            <p className="text-sm opacity-80">Enter credentials to load existing devices.</p>
+            <p className="text-sm opacity-80">Cluster-managed credentials are used server-side.</p>
           </div>
-          {connectionReady && <span className="text-sm px-3 py-1 rounded-full bg-green-600 text-white">Connected</span>}
+          {connected && <span className="text-sm px-3 py-1 rounded-full bg-green-600 text-white">Connected</span>}
         </div>
         <div className="grid gap-3 md:grid-cols-2">
           <div>
-            <label className="text-sm font-medium mb-1 block">ArgoCD URL</label>
-            <input
-              className={`w-full p-2 rounded ${inputChrome}`}
-              placeholder="https://openshift-gitops.example.com"
-              value={formValues.url}
-              onChange={(e) => setFormValues((prev) => ({ ...prev, url: e.target.value }))}
-            />
-          </div>
-          <div>
-            <label className="text-sm font-medium mb-1 block">Token</label>
-            <input
-              type="password"
-              className={`w-full p-2 rounded ${inputChrome}`}
-              value={formValues.token}
-              onChange={(e) => setFormValues((prev) => ({ ...prev, token: e.target.value }))}
-            />
-          </div>
-          <div className="md:col-span-2">
             <label className="text-sm font-medium mb-1 block">Cluster FQDN</label>
             <input
               className={`w-full p-2 rounded ${inputChrome}`}
               placeholder="apps.cluster.example.com"
-              value={formValues.clusterFqdn}
-              onChange={(e) => setFormValues((prev) => ({ ...prev, clusterFqdn: e.target.value }))}
+              value={clusterFqdnInput}
+              onChange={(e) => setClusterFqdnInput(e.target.value)}
             />
           </div>
-        </div>
-        <label className="flex items-center gap-2 text-sm mt-3">
-          <input
-            type="checkbox"
-            checked={formValues.disableTls}
-            onChange={(e) => setFormValues((prev) => ({ ...prev, disableTls: e.target.checked }))}
-          />
-          Disable TLS verification
-        </label>
-        <div className="flex gap-3 mt-4 flex-wrap">
-          <button
-            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded disabled:opacity-50"
-            onClick={handleConnect}
-            disabled={!formValues.url || !formValues.token}
-          >
-            Connect
-          </button>
-          <button
-            className="px-4 py-2 bg-gray-700 hover:bg-gray-800 text-white rounded disabled:opacity-50"
-            onClick={() => fetchDevices(connection)}
-            disabled={!connectionReady || loading}
-          >
-            Refresh
-          </button>
+          <div className="flex items-end gap-2">
+            <button
+              className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded disabled:opacity-50"
+              onClick={applyClusterSettings}
+            >
+              Apply
+            </button>
+            <button
+              className="px-4 py-2 bg-gray-700 hover:bg-gray-800 text-white rounded disabled:opacity-50"
+              onClick={handleRefresh}
+            >
+              Refresh
+            </button>
+          </div>
         </div>
       </div>
 
@@ -275,7 +212,7 @@ export default function DeviceDashboard({
           totalPages={totalPages}
           onPrev={onPrev}
           onNext={onNext}
-          argocdUrl={connection.url}
+        argocdUrl={resolvedArgoUiUrl}
           devSpacesUrl={devSpacesUrl}
           onSync={onSync}
         />
