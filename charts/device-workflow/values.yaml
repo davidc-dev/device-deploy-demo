@@ -11,6 +11,9 @@ backend:
     name: device-workflow-secrets
     tokenKey: GITHUB_TOKEN
     usernameKey: GITHUB_USERNAME
+    argocdUrlKey: ARGOCD_URL
+    argocdTokenKey: ARGOCD_TOKEN
+    argocdDisableTlsKey: ARGOCD_DISABLE_TLS
   resources: {}
   replicas: 1
 

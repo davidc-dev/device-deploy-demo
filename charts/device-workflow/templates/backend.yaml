@@ -39,6 +39,27 @@ spec:
                 secretKeyRef:
                   name: {{ .Values.backend.envSecret.name }}
                   key: {{ .Values.backend.envSecret.usernameKey }}
+            {{- if .Values.backend.envSecret.argocdUrlKey }}
+            - name: ARGOCD_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.backend.envSecret.name }}
+                  key: {{ .Values.backend.envSecret.argocdUrlKey }}
+            {{- end }}
+            {{- if .Values.backend.envSecret.argocdTokenKey }}
+            - name: ARGOCD_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.backend.envSecret.name }}
+                  key: {{ .Values.backend.envSecret.argocdTokenKey }}
+            {{- end }}
+            {{- if .Values.backend.envSecret.argocdDisableTlsKey }}
+            - name: ARGOCD_DISABLE_TLS
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.backend.envSecret.name }}
+                  key: {{ .Values.backend.envSecret.argocdDisableTlsKey }}
+            {{- end }}
           readinessProbe:
             httpGet:
               path: /docs
