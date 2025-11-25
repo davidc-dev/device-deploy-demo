@@ -21,33 +21,12 @@ app.add_middleware(
 # --- Config ---
 GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
 GITHUB_USERNAME = os.getenv("GITHUB_USERNAME", "davidc-dev")
-TEMPLATE_REPO = os.getenv("TEMPLATE_REPO", "https://github.com/davidc-dev/deploy-template-bgdk-yaml.git")
 
 
 # ---------- Helpers ----------
 
 def _git(*args, cwd: Optional[str] = None):
     subprocess.run(["git", *args], check=True, cwd=cwd)
-
-
-def _patch_placeholders(root_dir: str, replacements: dict):
-    files = [
-        "bgd-configmaps.yaml",
-        "bgd-deployment.yaml",
-        "bgd-pvc.yaml",
-        "bgd-route.yaml",
-        "bgd-svc.yaml",
-    ]
-    for rel in files:
-        path = os.path.join(root_dir, rel)
-        if not os.path.exists(path):
-            continue
-        with open(path, "r", encoding="utf-8") as f:
-            content = f.read()
-        for key, val in replacements.items():
-            content = content.replace(key, val)
-        with open(path, "w", encoding="utf-8") as f:
-            f.write(content)
 
 
 def _build_argocd_app_yaml(app_name: str, repo_url: str, dest_server: str, dest_namespace: str):
@@ -112,32 +91,99 @@ def _write_devfile(repo_dir: str, repo_name: str, repo_url: str):
         f.write(devfile + "\n")
 
 
+def _download_helm_chart(temp_dir: str, repo_dir: str, repo_url: str, chart_version: str = "", chart_name: str = ""):
+    os.makedirs(repo_dir, exist_ok=True)
+    unpack_dir = tempfile.mkdtemp(prefix="helm-chart-", dir=temp_dir)
+    repo_url = repo_url.strip()
+    if repo_url.startswith("oci://"):
+        chart_ref = repo_url.rstrip("/")
+        if chart_name:
+            chart_ref = f"{chart_ref}/{chart_name.lstrip('/')}"
+        cmd = ["helm", "pull", chart_ref, "--untar", "--untardir", unpack_dir]
+    else:
+        if not chart_name:
+            raise RuntimeError("helm_chart_name is required for non-OCI Helm repositories.")
+        cmd = ["helm", "pull", chart_name, "--repo", repo_url, "--untar", "--untardir", unpack_dir]
+    if chart_version:
+        cmd.extend(["--version", chart_version])
+    try:
+        subprocess.run(cmd, check=True, capture_output=True, text=True)
+    except FileNotFoundError:
+        raise RuntimeError("Helm CLI not found. Install helm or adjust PATH.")
+    except subprocess.CalledProcessError as exc:
+        raise RuntimeError(f"Helm pull failed: {exc.stderr or exc.stdout}") from exc
+
+    chart_dirs = [d for d in os.listdir(unpack_dir) if os.path.isdir(os.path.join(unpack_dir, d))]
+    if not chart_dirs:
+        raise RuntimeError("Helm pull completed but no chart directory was created.")
+    chart_root = None
+    if chart_name:
+        for d in chart_dirs:
+            if d == chart_name:
+                chart_root = os.path.join(unpack_dir, d)
+                break
+        if chart_root is None:
+            raise RuntimeError(f"Helm chart '{chart_name}' not found in archive; found {chart_dirs}")
+    else:
+        chart_root = os.path.join(unpack_dir, chart_dirs[0])
+    for entry in os.listdir(chart_root):
+        shutil.move(os.path.join(chart_root, entry), repo_dir)
+    shutil.rmtree(chart_root, ignore_errors=True)
+    shutil.rmtree(unpack_dir, ignore_errors=True)
+
+
+def _write_values_yaml(repo_dir: str, values_content: str, device_name: str, device_id: str, cluster_fqdn: str):
+    route_host = ""
+    if cluster_fqdn:
+        route_host = f"{device_name}-{device_id}.{cluster_fqdn}"
+    if values_content.strip():
+        content = values_content.strip() + ("\n" if not values_content.endswith("\n") else "")
+    else:
+        default = textwrap.dedent(
+            f"""
+            # Auto-generated values for {device_name} ({device_id})
+            device:
+              name: "{device_name}"
+              id: "{device_id}"
+            routeHost: "{route_host}"
+            """
+        ).strip("\n")
+        content = default + "\n"
+    with open(os.path.join(repo_dir, "values.yaml"), "w", encoding="utf-8") as f:
+        f.write(content)
+
+
 # ---------- Endpoints ----------
 @app.post("/create-device-repo")
 def create_device_repo(
     device_id: str = Form(...),
     device_name: str = Form(...),
     cluster_fqdn: str = Form(""),
+    helm_repo_url: str = Form(...),
+    helm_chart_name: str = Form(""),
+    helm_chart_version: str = Form(""),
+    helm_values_yaml: str = Form(""),
 ):
     if not GITHUB_TOKEN:
         return {"error": "GITHUB_TOKEN not set"}
+    if not helm_repo_url:
+        return {"error": "helm_repo_url is required"}
 
     temp_dir = tempfile.mkdtemp(prefix="device-")
     repo_dir = os.path.join(temp_dir, "repo")
     try:
-        # 1) Clone template
-        _git("clone", TEMPLATE_REPO, repo_dir)
+        try:
+            os.makedirs(repo_dir, exist_ok=True)
+            _download_helm_chart(temp_dir, repo_dir, helm_repo_url, helm_chart_version, helm_chart_name)
+        except RuntimeError as exc:
+            return {"error": str(exc)}
 
-        # 2) Replace placeholders
-        replacements = {
-            "{{DEVICE_ID}}": device_id,
-            "{{DEVICE_NAME}}": device_name,
-        }
+        try:
+            _write_values_yaml(repo_dir, helm_values_yaml, device_name, device_id, cluster_fqdn)
+        except Exception as exc:
+            return {"error": f"Unable to write values.yaml: {exc}"}
+
         repo_name = f"device-{device_name}-{device_id}".replace("_", "-")
-        if cluster_fqdn:
-            # route fqdn placeholder (if present)
-            replacements["{{CLUSTER_FQDN}}"] = cluster_fqdn
-        _patch_placeholders(repo_dir, replacements)
 
         # 3) Create the new repo
         headers = {
@@ -154,10 +200,10 @@ def create_device_repo(
         _write_devfile(repo_dir, repo_name, new_repo_clone_url)
 
         # 4) Push content
+        _git("init", cwd=repo_dir)
         # ensure human readable identity
         _git("config", "user.email", "auto@example.com", cwd=repo_dir)
         _git("config", "user.name", "Device Workflow Bot", cwd=repo_dir)
-        _git("remote", "remove", "origin", cwd=repo_dir)
 
         parsed = urlparse(new_repo_clone_url)
         token_netloc = f"{GITHUB_USERNAME}:{GITHUB_TOKEN}@{parsed.hostname}"
@@ -169,7 +215,17 @@ def create_device_repo(
         _git("add", ".", cwd=repo_dir)
         _git("commit", "-m", "Initial commit", cwd=repo_dir)
         _git("branch", "-M", "main", cwd=repo_dir)
-        _git("push", "-u", "origin", "main", cwd=repo_dir)
+        try:
+            completed = subprocess.run(
+                ["git", "push", "-u", "origin", "main"],
+                check=True,
+                cwd=repo_dir,
+                capture_output=True,
+                text=True,
+            )
+        except subprocess.CalledProcessError as exc:
+            msg = exc.stderr or exc.stdout or str(exc)
+            return {"error": f"Git push failed: {msg}"}
 
         return {"status": "ok", "repo_url": new_repo_clone_url, "repo_name": repo_name}
     finally:
