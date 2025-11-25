@@ -9,7 +9,9 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 WORKDIR /app
 
 # Install system packages needed for Helm + git
-RUN microdnf install -y git-core curl tar gzip && microdnf clean all
+RUN microdnf install -y git-core curl tar gzip findutils && \
+    microdnf clean all && \
+    rm -rf /var/cache/yum /var/cache/dnf
 
 # Install Helm
 ARG HELM_VERSION=v3.13.3
