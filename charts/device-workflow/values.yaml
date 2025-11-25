@@ -28,7 +28,6 @@ frontend:
     port: 80
     targetPort: 8080
   config:
-    apiBaseUrl: "http://device-workflow-backend.default.svc.cluster.local"
     argocdUrl: ""
     devSpacesUrl: ""
   resources: {}
