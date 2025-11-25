@@ -18,6 +18,6 @@ data:
       apiBaseUrl: "{{ $effective }}",
       internalApiBaseUrl: "{{ $internal }}",
       externalApiBaseUrl: "{{ $external }}",
-      argocdUrl: "{{ .Values.frontend.config.argocdUrl }}"
+      argocdUrl: "{{ .Values.frontend.config.argocdUrl }}",
       devSpacesUrl: "{{ .Values.frontend.config.devSpacesUrl }}"
     };

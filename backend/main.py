@@ -8,6 +8,9 @@ from urllib.parse import urlparse, urlunparse
 
 import requests
 from fastapi import FastAPI, Form
+from kubernetes import client, config
+from kubernetes.client import ApiException
+from kubernetes.config import ConfigException
 from fastapi.middleware.cors import CORSMiddleware
 
 app = FastAPI()
@@ -168,6 +171,17 @@ def _write_values_yaml(repo_dir: str, values_content: str, device_name: str, dev
         f.write(content)
 
 
+def _load_k8s_client():
+    try:
+        config.load_incluster_config()
+    except ConfigException:
+        try:
+            config.load_kube_config()
+        except ConfigException:
+            return None
+    return client.RouteOpenshiftIoV1Api()
+
+
 # ---------- Endpoints ----------
 @app.post("/create-device-repo")
 def create_device_repo(
@@ -326,12 +340,20 @@ def argocd_list_apps():
     data = resp.json() or {}
     items = data.get("items") if isinstance(data, dict) else data
     out = []
+    route_api = _load_k8s_client()
     for it in items or []:
         meta = it.get("metadata", {})
         spec = it.get("spec", {})
         status = it.get("status", {})
         dest = spec.get("destination", {})
         src = spec.get("source", {})
+        route_host = None
+        if route_api:
+            try:
+                route = route_api.read_namespaced_route(meta.get("name"), meta.get("namespace", "openshift-gitops"))
+                route_host = (route.spec.host if route and route.spec else None)
+            except ApiException:
+                route_host = None
         out.append({
             "appName": meta.get("name"),
             "namespace": dest.get("namespace"),
@@ -341,6 +363,7 @@ def argocd_list_apps():
             "health": (status.get("health", {}) or {}).get("status"),
             "lastSync": (status.get("operationState", {}) or {}).get("finishedAt"),
             "clusterFqdn": APPS_DOMAIN,
+            "routeHost": route_host,
         })
     return {"apps": out}
 
