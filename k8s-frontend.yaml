@@ -1,0 +1,49 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: device-workflow-frontend
+  labels:
+    app: device-workflow-frontend
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: device-workflow-frontend
+  template:
+    metadata:
+      labels:
+        app: device-workflow-frontend
+    spec:
+      containers:
+        - name: frontend
+          image: ghcr.io/example/device-workflow-frontend:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8080
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 8080
+            initialDelaySeconds: 15
+            periodSeconds: 20
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: device-workflow-frontend
+  labels:
+    app: device-workflow-frontend
+spec:
+  type: ClusterIP
+  selector:
+    app: device-workflow-frontend
+  ports:
+    - name: http
+      port: 80
+      targetPort: 8080

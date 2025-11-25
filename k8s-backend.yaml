@@ -1,0 +1,54 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: device-workflow-backend
+  labels:
+    app: device-workflow-backend
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: device-workflow-backend
+  template:
+    metadata:
+      labels:
+        app: device-workflow-backend
+    spec:
+      containers:
+        - name: backend
+          image: ghcr.io/example/device-workflow-backend:latest
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: PORT
+              value: "8000"
+          envFrom:
+            - secretRef:
+                name: device-workflow-secrets
+          ports:
+            - containerPort: 8000
+          readinessProbe:
+            httpGet:
+              path: /docs
+              port: 8000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /docs
+              port: 8000
+            initialDelaySeconds: 15
+            periodSeconds: 20
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: device-workflow-backend
+  labels:
+    app: device-workflow-backend
+spec:
+  selector:
+    app: device-workflow-backend
+  ports:
+    - name: http
+      port: 80
+      targetPort: 8000
