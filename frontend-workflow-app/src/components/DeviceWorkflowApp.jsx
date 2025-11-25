@@ -139,7 +139,7 @@ export default function DeviceWorkflowApp() {
           <div className="grid grid-cols-1 gap-6">
             {step === 1 && (
               <div className={`${cardBaseWF} ${cardBg}`}>
-                <h1 className={headerWF}>Create New Application</h1>
+                <h1 className={headerWF}>Create New Device</h1>
                 <p className={subheaderWF}>Step 1: Enter device information.</p>
 
                 <label className="font-medium">Device Name</label>
