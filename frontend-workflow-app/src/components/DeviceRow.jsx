@@ -40,7 +40,7 @@ const buildRouteUrl = (deviceName, deviceId, clusterFqdn) => {
 
 export default function DeviceRow({ d, argocdUrl, devSpacesUrl, onSync }) {
   const devSpacesLink = buildDevSpacesLink(devSpacesUrl, d.repoUrl);
-  const routeUrl = buildRouteUrl(d.deviceName, d.deviceId, d.clusterFqdn);
+  const routeUrl = d.routeHost ? `https://${d.routeHost}` : buildRouteUrl(d.deviceName, d.deviceId, d.clusterFqdn);
 
   return (
     <tr className="border-t border-gray-600/20">
