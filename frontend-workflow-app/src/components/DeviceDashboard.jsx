@@ -143,7 +143,7 @@ export default function DeviceDashboard({
   const inputChrome = darkMode
     ? "bg-gray-800 border-gray-600 text-gray-100 placeholder-gray-400"
     : "bg-white border-gray-300 text-gray-900 placeholder-gray-500";
-  const devSpacesUrl = import.meta.env.VITE_DEVSPACES_URL || "";
+  const devSpacesUrl = runtimeConfig.devSpacesUrl || import.meta.env.VITE_DEVSPACES_URL || "";
 
   return (
     <div className={`${cardBase} ${tableChrome}`}>

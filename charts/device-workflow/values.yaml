@@ -37,6 +37,7 @@ frontend:
   config:
     apiBaseUrl: "http://device-workflow-backend.default.svc.cluster.local"
     argocdUrl: ""
+    devSpacesUrl: ""
   resources: {}
   replicas: 1
 

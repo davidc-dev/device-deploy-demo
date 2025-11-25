@@ -3,4 +3,5 @@ window.__APP_CONFIG__ = window.__APP_CONFIG__ || {
   internalApiBaseUrl: "http://localhost:8000",
   externalApiBaseUrl: "",
   argocdUrl: "",
+  devSpacesUrl: "",
 };
