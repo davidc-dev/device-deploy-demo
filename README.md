@@ -49,7 +49,7 @@ Visit `http://localhost:5173`.
 # Backend (installs Helm in image)
 docker build -f backend/Dockerfile -t ghcr.io/<user>/device-workflow-backend backend
 
-# Frontend (runtime API URL provided via ConfigMap)
+# Frontend (runtime API proxied via /api)
 docker build -f frontend-workflow-app/Dockerfile -t ghcr.io/<user>/device-workflow-frontend frontend-workflow-app
 ```
 
@@ -73,13 +73,10 @@ Push both images to a registry that your cluster can pull from.
    helm upgrade --install device-workflow charts/device-workflow \
      --set backend.image.repository=ghcr.io/<user>/device-workflow-backend \
      --set frontend.image.repository=ghcr.io/<user>/device-workflow-frontend \
-     --set backend.route.enabled=true \
-     --set backend.route.host=device-workflow-backend.<apps-domain> \
-     --set frontend.config.apiBaseUrl=https://device-workflow-backend.<apps-domain> \
+     --set route.enabled=true --set route.host=device.apps.example.com \
      --set frontend.config.argocdUrl=https://openshift-gitops-server-openshift-gitops.apps.<cluster>
    ```
-   - Enable frontend exposure via Route: `--set route.enabled=true --set route.host=device.apps.example.com`.
-   - The backend Route exposes the FastAPI API externally; if you omit `frontend.config.apiBaseUrl`, the chart defaults to the in-cluster Service DNS (`http://<backend-service>.<namespace>.svc.cluster.local`). Override it with the Route URL when you need browser access.
+   - The frontend Route exposes the SPA, while `/api` calls proxy internally to the backend Service—no backend Route needed.
    - The chart injects these values into a ConfigMap-backed `env-config.js` so you can redeploy the frontend without rebuilding when the backend namespace/URL or ArgoCD host changes.
 3. To uninstall: `helm uninstall device-workflow`.
 

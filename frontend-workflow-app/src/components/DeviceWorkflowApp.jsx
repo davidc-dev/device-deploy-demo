@@ -35,12 +35,7 @@ export default function DeviceWorkflowApp() {
 
   const runtimeConfig = typeof window !== "undefined" ? window.__APP_CONFIG__ || {} : {};
   const isHttps = typeof window !== "undefined" ? window.location.protocol === "https:" : false;
-  const API_BASE =
-    runtimeConfig.apiBaseUrl ||
-    (isHttps && runtimeConfig.externalApiBaseUrl ? runtimeConfig.externalApiBaseUrl : null) ||
-    runtimeConfig.internalApiBaseUrl ||
-    import.meta.env.VITE_API_BASE_URL ||
-    "http://localhost:8000";
+  const API_BASE = "/api";
   const ARGOCD_UI_BASE = runtimeConfig.argocdUrl || "";
 
   const [darkMode, setDarkMode] = useState(false);

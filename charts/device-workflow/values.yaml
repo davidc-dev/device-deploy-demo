@@ -14,13 +14,6 @@ backend:
     argocdUrlKey: ARGOCD_URL
     argocdTokenKey: ARGOCD_TOKEN
     argocdDisableTlsKey: ARGOCD_DISABLE_TLS
-  route:
-    enabled: false
-    host: ""
-    tls:
-      termination: edge
-      insecureEdgeTerminationPolicy: Redirect
-    annotations: {}
   appsDomain: ""
   resources: {}
   replicas: 1
