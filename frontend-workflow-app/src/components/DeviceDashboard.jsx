@@ -76,6 +76,10 @@ export default function DeviceDashboard({
       });
 
       setDevices(normalized);
+      const detectedDomain = normalized.find((item) => item.clusterFqdn)?.clusterFqdn;
+      if (detectedDomain && detectedDomain !== clusterFqdn) {
+        setClusterFqdn(detectedDomain);
+      }
       setConnected(true);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));

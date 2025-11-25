@@ -60,6 +60,8 @@ spec:
                   name: {{ .Values.backend.envSecret.name }}
                   key: {{ .Values.backend.envSecret.argocdDisableTlsKey }}
             {{- end }}
+            - name: APPS_DOMAIN
+              value: "{{ .Values.backend.appsDomain }}"
           readinessProbe:
             httpGet:
               path: /docs
@@ -74,9 +76,6 @@ spec:
             periodSeconds: 20
           resources:
 {{ toYaml .Values.backend.resources | indent 12 }}
-          env:
-            - name: APPS_DOMAIN
-              value: "{{ .Values.backend.appsDomain }}"
 ---
 apiVersion: v1
 kind: Service
