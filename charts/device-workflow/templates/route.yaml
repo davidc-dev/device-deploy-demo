@@ -16,8 +16,13 @@ spec:
   to:
     kind: Service
     name: {{ include "device-workflow.frontendName" . }}
+  {{- if eq (int .Values.frontend.service.port) 80 }}
   port:
-    targetPort: {{- if eq (int .Values.frontend.service.port) 80 }}http{{- else }}{{ .Values.frontend.service.port }}{{- end }}
+    targetPort: http
+  {{- else }}
+  port:
+    targetPort: {{ .Values.frontend.service.port }}
+  {{- end }}
   tls:
     termination: {{ .Values.route.tls.termination }}
     insecureEdgeTerminationPolicy: {{ .Values.route.tls.insecureEdgeTerminationPolicy }}
