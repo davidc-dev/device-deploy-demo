@@ -1,0 +1,6 @@
+1. Backend service: {{ include "device-workflow.backendName" . }}
+2. Frontend service: {{ include "device-workflow.frontendName" . }}
+
+If ingress is enabled, browse to:
+  http{{ if .Values.ingress.tls }}s{{ end }}://{{ .Values.ingress.host }}/
+Otherwise, use `kubectl port-forward svc/{{ include "device-workflow.frontendName" . }} 8080:{{ .Values.frontend.service.port }}`.

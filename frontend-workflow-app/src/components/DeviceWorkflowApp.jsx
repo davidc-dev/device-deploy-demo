@@ -17,6 +17,10 @@ export default function DeviceWorkflowApp() {
   const [deviceName, setDeviceName] = useState("");
   const [deviceId, setDeviceId] = useState("");
   const [clusterFqdn, setClusterFqdn] = useState("");
+  const [helmRepoUrl, setHelmRepoUrl] = useState("");
+  const [helmChartName, setHelmChartName] = useState("");
+  const [helmChartVersion, setHelmChartVersion] = useState("");
+  const [helmValuesYaml, setHelmValuesYaml] = useState("");
 
   const [repoUrl, setRepoUrl] = useState("");
 
@@ -33,7 +37,8 @@ export default function DeviceWorkflowApp() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
-  const API_BASE = "http://localhost:8000";
+  const runtimeConfig = typeof window !== "undefined" ? window.__APP_CONFIG__ || {} : {};
+  const API_BASE = runtimeConfig.apiBaseUrl || import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
 
   const [darkMode, setDarkMode] = useState(false);
   const pageBg = darkMode ? "bg-gray-900 text-gray-100" : "bg-gray-100 text-gray-900";
@@ -55,6 +60,10 @@ export default function DeviceWorkflowApp() {
       formData.append("device_id", deviceId);
       formData.append("device_name", deviceName);
       formData.append("cluster_fqdn", clusterFqdn);
+      formData.append("helm_repo_url", helmRepoUrl);
+      formData.append("helm_chart_name", helmChartName);
+      formData.append("helm_chart_version", helmChartVersion);
+      formData.append("helm_values_yaml", helmValuesYaml);
 
       const res = await fetch(`${API_BASE}/create-device-repo`, {
         method: "POST",
@@ -150,6 +159,28 @@ export default function DeviceWorkflowApp() {
 
                 <label className="font-medium">Cluster FQDN</label>
                 <input className={`${inputWF} ${inputTheme}`} value={clusterFqdn} onChange={(e) => setClusterFqdn(e.target.value)} />
+
+                <label className="font-medium">Helm Repository URL</label>
+                <input className={`${inputWF} ${inputTheme}`} value={helmRepoUrl} onChange={(e) => setHelmRepoUrl(e.target.value)} placeholder="e.g., oci://registry/namespace/chart" />
+
+                <label className="font-medium">Helm Chart Name</label>
+                <input
+                  className={`${inputWF} ${inputTheme}`}
+                  value={helmChartName}
+                  onChange={(e) => setHelmChartName(e.target.value)}
+                  placeholder="e.g., workflow-chart (optional when repo URL is oci://...)"
+                />
+
+                <label className="font-medium">Chart Version</label>
+                <input className={`${inputWF} ${inputTheme}`} value={helmChartVersion} onChange={(e) => setHelmChartVersion(e.target.value)} placeholder="latest" />
+
+                <label className="font-medium">values.yaml Content</label>
+                <textarea
+                  className={`w-full h-48 p-3 border rounded-lg font-mono text-sm mb-4 ${inputTheme}`}
+                  value={helmValuesYaml}
+                  onChange={(e) => setHelmValuesYaml(e.target.value)}
+                  placeholder="Paste custom values YAML here"
+                />
 
                 {error && <p className="text-red-500 mb-4">{error}</p>}
 
