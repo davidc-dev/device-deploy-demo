@@ -9,9 +9,11 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 WORKDIR /app
 
 # Install system packages needed for Helm + git
-RUN microdnf install -y git-core curl tar gzip findutils && \
-    microdnf clean all && \
-    rm -rf /var/cache/yum /var/cache/dnf
+USER root
+
+RUN microdnf install -y git-core tar gzip findutils && \
+    microdnf clean all 
+
 
 # Install Helm
 ARG HELM_VERSION=v3.13.3
@@ -20,10 +22,13 @@ RUN curl -fsSL https://get.helm.sh/helm-${HELM_VERSION}-linux-amd64.tar.gz | tar
     chmod +x /usr/local/bin/helm && \
     rm -rf linux-amd64
 
-COPY backend/requirements.txt .
+
+USER 1001
+
+COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY backend /app
+COPY . /app
 
 EXPOSE 8000
 

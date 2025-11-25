@@ -43,20 +43,17 @@ Visit `http://localhost:5173`.
 
 ```bash
 # Backend (installs Helm in image)
-docker build -f backend/Dockerfile -t ghcr.io/<user>/device-workflow-backend .
+docker build -f backend/Dockerfile -t ghcr.io/<user>/device-workflow-backend backend
 
-# Frontend (override API base if backend runs in-cluster)
-docker build \
-  -f frontend-workflow-app/Dockerfile \
-  --build-arg VITE_API_BASE_URL=http://device-workflow-backend.default.svc.cluster.local \
-  -t ghcr.io/<user>/device-workflow-frontend .
+# Frontend (runtime API URL provided via ConfigMap)
+docker build -f frontend-workflow-app/Dockerfile -t ghcr.io/<user>/device-workflow-frontend frontend-workflow-app
 ```
 
 > These builds pull from `registry.redhat.io`, so authenticate first (`docker login registry.redhat.io`) using your Red Hat credentials.
 
 Push both images to a registry that your cluster can pull from.
 
-### Deploy to Kubernetes
+### Deploy with Helm (recommended)
 
 1. Create a secret that holds your GitHub credentials (backend reads `GITHUB_TOKEN` + optionally `GITHUB_USERNAME`):
    ```bash
@@ -64,14 +61,17 @@ Push both images to a registry that your cluster can pull from.
      --from-literal=GITHUB_TOKEN=<pat> \
      --from-literal=GITHUB_USERNAME=<github-user>
    ```
-2. Edit `k8s-backend.yaml` and `k8s-frontend.yaml` to point to your pushed images (and adjust namespaces if needed).
-3. Apply the manifests:
+2. Install the provided Helm chart (defaults reference the image names above; override as needed):
    ```bash
-   kubectl apply -f k8s-backend.yaml
-   kubectl apply -f k8s-frontend.yaml
+   helm upgrade --install device-workflow charts/device-workflow \
+     --set backend.image.repository=ghcr.io/<user>/device-workflow-backend \
+     --set frontend.image.repository=ghcr.io/<user>/device-workflow-frontend \
+     --set frontend.config.apiBaseUrl=http://device-workflow-backend.<namespace>.svc.cluster.local
    ```
-4. Expose the frontend service externally (e.g., via Ingress/Route or port-forward) to access the UI. The frontend image bakes the API URL via the `VITE_API_BASE_URL` build arg so it automatically speaks to the cluster backend Service.
-   - The frontend container now serves on port `8080` (RHEL UBI nginx), while the Service maps cluster port 80 to the pod’s 8080.
+   - Enable an OpenShift Route via `--set route.enabled=true --set route.host=device.apps.example.com`.
+3. To uninstall: `helm uninstall device-workflow`.
+
+> Legacy raw manifests (`k8s-backend.yaml`, `k8s-frontend.yaml`) remain for reference but the Helm chart keeps the two workloads in sync and is easier to configure on OpenShift (including Route support and runtime API base URL config).
 
 ## User Workflow
 
