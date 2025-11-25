@@ -24,6 +24,7 @@ GITHUB_USERNAME = os.getenv("GITHUB_USERNAME", "davidc-dev")
 ARGOCD_URL = os.getenv("ARGOCD_URL")
 ARGOCD_TOKEN = os.getenv("ARGOCD_TOKEN")
 ARGOCD_DISABLE_TLS = os.getenv("ARGOCD_DISABLE_TLS", "false")
+APPS_DOMAIN = os.getenv("APPS_DOMAIN", "")
 
 
 # ---------- Helpers ----------
@@ -339,6 +340,7 @@ def argocd_list_apps():
             "syncStatus": (status.get("sync", {}) or {}).get("status"),
             "health": (status.get("health", {}) or {}).get("status"),
             "lastSync": (status.get("operationState", {}) or {}).get("finishedAt"),
+            "clusterFqdn": APPS_DOMAIN,
         })
     return {"apps": out}
 

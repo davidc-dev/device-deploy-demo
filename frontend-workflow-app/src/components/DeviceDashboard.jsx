@@ -31,7 +31,6 @@ export default function DeviceDashboard({
   const [page, setPage] = useState(1);
   const pageSize = 8;
 
-  const [clusterFqdnInput, setClusterFqdnInput] = useState(defaultClusterFqdn || "");
   const [clusterFqdn, setClusterFqdn] = useState(defaultClusterFqdn || "");
   const [connected, setConnected] = useState(false);
   const runtimeConfig = typeof window !== "undefined" ? window.__APP_CONFIG__ || {} : {};
@@ -45,7 +44,6 @@ export default function DeviceDashboard({
   const resolvedArgoUiUrl = argocdUiUrl || runtimeConfig.argocdUrl || "";
 
   useEffect(() => {
-    setClusterFqdnInput(defaultClusterFqdn || "");
     setClusterFqdn(defaultClusterFqdn || "");
   }, [defaultClusterFqdn]);
 
@@ -136,9 +134,6 @@ export default function DeviceDashboard({
     }
   };
 
-  const applyClusterSettings = () => {
-    setClusterFqdn(clusterFqdnInput.trim());
-  };
   const handleRefresh = () => fetchDevices();
   const controlChrome = darkMode ? "bg-gray-900 border-gray-700 text-gray-100" : "bg-gray-50 border-gray-200 text-gray-900";
   const inputChrome = darkMode
@@ -157,30 +152,14 @@ export default function DeviceDashboard({
           </div>
           {connected && <span className="text-sm px-3 py-1 rounded-full bg-green-600 text-white">Connected</span>}
         </div>
-        <div className="grid gap-3 md:grid-cols-2">
-          <div>
-            <label className="text-sm font-medium mb-1 block">Cluster FQDN</label>
-            <input
-              className={`w-full p-2 rounded ${inputChrome}`}
-              placeholder="apps.cluster.example.com"
-              value={clusterFqdnInput}
-              onChange={(e) => setClusterFqdnInput(e.target.value)}
-            />
-          </div>
-          <div className="flex items-end gap-2">
-            <button
-              className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded disabled:opacity-50"
-              onClick={applyClusterSettings}
-            >
-              Apply
-            </button>
-            <button
-              className="px-4 py-2 bg-gray-700 hover:bg-gray-800 text-white rounded disabled:opacity-50"
-              onClick={handleRefresh}
-            >
-              Refresh
-            </button>
-          </div>
+        <p className="text-sm mb-2">Route domain: <span className="font-mono">{clusterFqdn || "not set"}</span></p>
+        <div className="flex gap-2">
+          <button
+            className="px-4 py-2 bg-gray-700 hover:bg-gray-800 text-white rounded disabled:opacity-50"
+            onClick={handleRefresh}
+          >
+            Refresh
+          </button>
         </div>
       </div>
 
