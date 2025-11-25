@@ -1,0 +1,24 @@
+{{- if .Values.backend.route.enabled }}
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: {{ include "device-workflow.backendName" . }}
+  labels:
+    app.kubernetes.io/name: {{ include "device-workflow.name" . }}
+    app.kubernetes.io/component: backend
+    app.kubernetes.io/instance: {{ .Release.Name }}
+  annotations:
+{{- range $key, $value := .Values.backend.route.annotations }}
+    {{ $key }}: {{ $value | quote }}
+{{- end }}
+spec:
+  host: {{ .Values.backend.route.host }}
+  to:
+    kind: Service
+    name: {{ include "device-workflow.backendName" . }}
+  port:
+    targetPort: http
+  tls:
+    termination: {{ .Values.backend.route.tls.termination }}
+    insecureEdgeTerminationPolicy: {{ .Values.backend.route.tls.insecureEdgeTerminationPolicy }}
+{{- end }}

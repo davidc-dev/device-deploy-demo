@@ -35,7 +35,13 @@ export default function DeviceDashboard({
   const [clusterFqdn, setClusterFqdn] = useState(defaultClusterFqdn || "");
   const [connected, setConnected] = useState(false);
   const runtimeConfig = typeof window !== "undefined" ? window.__APP_CONFIG__ || {} : {};
-  const resolvedApiBase = apiBase || runtimeConfig.apiBaseUrl || "http://localhost:8000";
+  const isHttps = typeof window !== "undefined" ? window.location.protocol === "https:" : false;
+  const resolvedApiBase =
+    apiBase ||
+    runtimeConfig.apiBaseUrl ||
+    (isHttps && runtimeConfig.externalApiBaseUrl ? runtimeConfig.externalApiBaseUrl : null) ||
+    runtimeConfig.internalApiBaseUrl ||
+    "http://localhost:8000";
   const resolvedArgoUiUrl = argocdUiUrl || runtimeConfig.argocdUrl || "";
 
   useEffect(() => {

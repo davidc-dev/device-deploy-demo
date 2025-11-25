@@ -73,10 +73,13 @@ Push both images to a registry that your cluster can pull from.
    helm upgrade --install device-workflow charts/device-workflow \
      --set backend.image.repository=ghcr.io/<user>/device-workflow-backend \
      --set frontend.image.repository=ghcr.io/<user>/device-workflow-frontend \
-     --set frontend.config.apiBaseUrl=http://device-workflow-backend.<namespace>.svc.cluster.local \
+     --set backend.route.enabled=true \
+     --set backend.route.host=device-workflow-backend.<apps-domain> \
+     --set frontend.config.apiBaseUrl=https://device-workflow-backend.<apps-domain> \
      --set frontend.config.argocdUrl=https://openshift-gitops-server-openshift-gitops.apps.<cluster>
    ```
-   - Enable an OpenShift Route via `--set route.enabled=true --set route.host=device.apps.example.com`.
+   - Enable frontend exposure via Route: `--set route.enabled=true --set route.host=device.apps.example.com`.
+   - The backend Route exposes the FastAPI API externally; if you omit `frontend.config.apiBaseUrl`, the chart defaults to the in-cluster Service DNS (`http://<backend-service>.<namespace>.svc.cluster.local`). Override it with the Route URL when you need browser access.
    - The chart injects these values into a ConfigMap-backed `env-config.js` so you can redeploy the frontend without rebuilding when the backend namespace/URL or ArgoCD host changes.
 3. To uninstall: `helm uninstall device-workflow`.
 
