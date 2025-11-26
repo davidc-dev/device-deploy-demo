@@ -30,6 +30,9 @@ spec:
             - name: frontend-config
               mountPath: /opt/app-root/src/env-config.js
               subPath: env-config.js
+            - name: frontend-nginx
+              mountPath: /etc/nginx/nginx.conf
+              subPath: nginx.conf
           readinessProbe:
             httpGet:
               path: /
@@ -48,6 +51,9 @@ spec:
         - name: frontend-config
           configMap:
             name: {{ include "device-workflow.frontendName" . }}-config
+        - name: frontend-nginx
+          configMap:
+            name: {{ include "device-workflow.frontendName" . }}-nginx
 ---
 apiVersion: v1
 kind: Service
