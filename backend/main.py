@@ -349,11 +349,12 @@ def argocd_list_apps():
         src = spec.get("source", {})
         route_host = None
         if kube_api:
+            dest_namespace = dest.get("namespace") or "default"
             try:
                 route = kube_api.get_namespaced_custom_object(
                     group="route.openshift.io",
                     version="v1",
-                    namespace=meta.get("namespace", "openshift-gitops"),
+                    namespace=dest_namespace,
                     plural="routes",
                     name=meta.get("name")
                 )
