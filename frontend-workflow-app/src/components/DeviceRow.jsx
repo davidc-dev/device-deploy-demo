@@ -31,16 +31,9 @@ const buildDevSpacesLink = (baseUrl, repoUrl) => {
   }
 };
 
-const buildRouteUrl = (deviceName, deviceId, clusterFqdn) => {
-  if (!deviceName || !deviceId || !clusterFqdn) return null;
-  const namePart = deviceName.trim().toLowerCase().replace(/\s+/g, "-");
-  const idPart = deviceId.trim().toLowerCase().replace(/\s+/g, "-");
-  return `https://${namePart}-${idPart}.apps.${clusterFqdn}`;
-};
-
 export default function DeviceRow({ d, argocdUrl, devSpacesUrl, onSync }) {
   const devSpacesLink = buildDevSpacesLink(devSpacesUrl, d.repoUrl);
-  const routeUrl = d.routeHost ? `https://${d.routeHost}` : buildRouteUrl(d.deviceName, d.deviceId, d.clusterFqdn);
+  const routeUrl = d.routeHost ? `https://${d.routeHost}` : null;
 
   return (
     <tr className="border-t border-gray-600/20">

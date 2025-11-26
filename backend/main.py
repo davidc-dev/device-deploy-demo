@@ -6,12 +6,16 @@ import textwrap
 from typing import Optional
 from urllib.parse import urlparse, urlunparse
 
+import logging
 import requests
 from fastapi import FastAPI, Form
 from kubernetes import client, config
 from kubernetes.client import ApiException
 from kubernetes.config import ConfigException
 from fastapi.middleware.cors import CORSMiddleware
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger("device-workflow")
 
 app = FastAPI()
 app.add_middleware(
@@ -363,9 +367,10 @@ def argocd_list_apps():
                     host = (route.get("spec") or {}).get("host")
                     if host:
                         route_host = host
+                        logger.info("Route host %s found via label for %s/%s", host, dest_namespace, app_name)
                         break
-            except ApiException:
-                route_host = None
+            except ApiException as exc:
+                logger.warning("Route lookup via label failed for %s/%s: %s", dest_namespace, app_name, exc)
 
             if not route_host:
                 try:
@@ -377,10 +382,13 @@ def argocd_list_apps():
                         name=app_name,
                     )
                     route_host = (route.get("spec") or {}).get("host")
-                except ApiException:
-                    route_host = None
+                    if route_host:
+                        logger.info("Route host %s found via name for %s/%s", route_host, dest_namespace, app_name)
+                except ApiException as exc:
+                    logger.warning("Route lookup via name failed for %s/%s: %s", dest_namespace, app_name, exc)
         if not route_host and APPS_DOMAIN and dest.get("namespace"):
             route_host = f"{meta.get('name')}-{dest.get('namespace')}.{APPS_DOMAIN}"
+            logger.info("Defaulting route host to %s for %s", route_host, meta.get('name'))
         out.append({
             "appName": meta.get("name"),
             "namespace": dest.get("namespace"),
