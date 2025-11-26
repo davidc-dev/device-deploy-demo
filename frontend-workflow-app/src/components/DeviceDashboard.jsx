@@ -19,7 +19,6 @@ const parseDeviceFields = (appName) => {
 export default function DeviceDashboard({
   darkMode,
   defaultClusterFqdn = "",
-  apiBase,
   argocdUiUrl = "",
 }) {
   const [devices, setDevices] = useState([]);
@@ -34,8 +33,6 @@ export default function DeviceDashboard({
   const [clusterFqdn, setClusterFqdn] = useState(defaultClusterFqdn || "");
   const [connected, setConnected] = useState(false);
   const runtimeConfig = typeof window !== "undefined" ? window.__APP_CONFIG__ || {} : {};
-  const isHttps = typeof window !== "undefined" ? window.location.protocol === "https:" : false;
-  const resolvedApiBase = "/api";
   const resolvedArgoUiUrl = argocdUiUrl || runtimeConfig.argocdUrl || "";
 
   useEffect(() => {
@@ -196,7 +193,7 @@ export default function DeviceDashboard({
           totalPages={totalPages}
           onPrev={onPrev}
           onNext={onNext}
-        argocdUrl={resolvedArgoUiUrl}
+          argocdUrl={resolvedArgoUiUrl}
           devSpacesUrl={devSpacesUrl}
           onSync={onSync}
         />
