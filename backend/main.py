@@ -379,6 +379,8 @@ def argocd_list_apps():
                     route_host = (route.get("spec") or {}).get("host")
                 except ApiException:
                     route_host = None
+        if not route_host and APPS_DOMAIN and dest.get("namespace"):
+            route_host = f"{meta.get('name')}-{dest.get('namespace')}.{APPS_DOMAIN}"
         out.append({
             "appName": meta.get("name"),
             "namespace": dest.get("namespace"),
