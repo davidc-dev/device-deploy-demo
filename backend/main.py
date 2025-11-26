@@ -350,17 +350,35 @@ def argocd_list_apps():
         route_host = None
         if kube_api:
             dest_namespace = dest.get("namespace") or "default"
+            app_name = meta.get("name")
             try:
-                route = kube_api.get_namespaced_custom_object(
+                routes = kube_api.list_namespaced_custom_object(
                     group="route.openshift.io",
                     version="v1",
                     namespace=dest_namespace,
                     plural="routes",
-                    name=meta.get("name")
+                    label_selector=f"argocd.argoproj.io/instance={app_name}"
                 )
-                route_host = ((route.get("spec") or {}).get("host"))
+                for route in (routes.get("items") or []):
+                    host = (route.get("spec") or {}).get("host")
+                    if host:
+                        route_host = host
+                        break
             except ApiException:
                 route_host = None
+
+            if not route_host:
+                try:
+                    route = kube_api.get_namespaced_custom_object(
+                        group="route.openshift.io",
+                        version="v1",
+                        namespace=dest_namespace,
+                        plural="routes",
+                        name=app_name,
+                    )
+                    route_host = (route.get("spec") or {}).get("host")
+                except ApiException:
+                    route_host = None
         out.append({
             "appName": meta.get("name"),
             "namespace": dest.get("namespace"),
