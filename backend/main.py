@@ -179,7 +179,7 @@ def _load_k8s_client():
             config.load_kube_config()
         except ConfigException:
             return None
-    return client.RouteOpenshiftIoV1Api()
+    return client.CustomObjectsApi()
 
 
 # ---------- Endpoints ----------
@@ -340,7 +340,7 @@ def argocd_list_apps():
     data = resp.json() or {}
     items = data.get("items") if isinstance(data, dict) else data
     out = []
-    route_api = _load_k8s_client()
+    kube_api = _load_k8s_client()
     for it in items or []:
         meta = it.get("metadata", {})
         spec = it.get("spec", {})
@@ -348,10 +348,16 @@ def argocd_list_apps():
         dest = spec.get("destination", {})
         src = spec.get("source", {})
         route_host = None
-        if route_api:
+        if kube_api:
             try:
-                route = route_api.read_namespaced_route(meta.get("name"), meta.get("namespace", "openshift-gitops"))
-                route_host = (route.spec.host if route and route.spec else None)
+                route = kube_api.get_namespaced_custom_object(
+                    group="route.openshift.io",
+                    version="v1",
+                    namespace=meta.get("namespace", "openshift-gitops"),
+                    plural="routes",
+                    name=meta.get("name")
+                )
+                route_host = ((route.get("spec") or {}).get("host"))
             except ApiException:
                 route_host = None
         out.append({
