@@ -84,8 +84,8 @@ metadata:
   name: {{ include "device-workflow.backendName" . }}
   labels:
     app.kubernetes.io/name: {{ include "device-workflow.name" . }}
-        app.kubernetes.io/component: backend
-        app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/component: backend
+    app.kubernetes.io/instance: {{ .Release.Name }}
 spec:
   type: {{ .Values.backend.service.type }}
   selector:

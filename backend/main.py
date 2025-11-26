@@ -354,7 +354,8 @@ def argocd_list_apps():
         route_host = None
         if kube_api:
             dest_namespace = dest.get("namespace") or "default"
-            app_name = meta.get("name")
+        app_name = meta.get("name")
+        base_name = meta.get("annotations", {}).get("device-workflow/name", app_name)
             try:
                 routes = kube_api.list_namespaced_custom_object(
                     group="route.openshift.io",
@@ -379,15 +380,15 @@ def argocd_list_apps():
                         version="v1",
                         namespace=dest_namespace,
                         plural="routes",
-                        name=app_name,
-                    )
+                    name=app_name,
+                )
                     route_host = (route.get("spec") or {}).get("host")
                     if route_host:
                         logger.info("Route host %s found via name for %s/%s", route_host, dest_namespace, app_name)
                 except ApiException as exc:
                     logger.warning("Route lookup via name failed for %s/%s: %s", dest_namespace, app_name, exc)
         if not route_host and APPS_DOMAIN and dest.get("namespace"):
-            route_host = f"{meta.get('name')}-{dest.get('namespace')}.{APPS_DOMAIN}"
+            route_host = f"{base_name}-{dest.get('namespace')}.{APPS_DOMAIN}"
             logger.info("Defaulting route host to %s for %s", route_host, meta.get('name'))
         out.append({
             "appName": meta.get("name"),
