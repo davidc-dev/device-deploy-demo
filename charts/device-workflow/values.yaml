@@ -15,6 +15,8 @@ backend:
     argocdTokenKey: ARGOCD_TOKEN
     argocdDisableTlsKey: ARGOCD_DISABLE_TLS
   appsDomain: ""
+  serviceAccount:
+    name: ""
   resources: {}
   replicas: 1
 

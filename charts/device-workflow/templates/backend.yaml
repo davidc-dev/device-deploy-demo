@@ -20,6 +20,7 @@ spec:
         app.kubernetes.io/component: backend
         app.kubernetes.io/instance: {{ .Release.Name }}
     spec:
+      serviceAccountName: {{ if .Values.backend.serviceAccount.name }}{{ .Values.backend.serviceAccount.name }}{{ else }}{{ include "device-workflow.backendName" . }}{{ end }}
       containers:
         - name: backend
           image: "{{ .Values.backend.image.repository }}:{{ .Values.backend.image.tag }}"
@@ -83,8 +84,8 @@ metadata:
   name: {{ include "device-workflow.backendName" . }}
   labels:
     app.kubernetes.io/name: {{ include "device-workflow.name" . }}
-    app.kubernetes.io/component: backend
-    app.kubernetes.io/instance: {{ .Release.Name }}
+        app.kubernetes.io/component: backend
+        app.kubernetes.io/instance: {{ .Release.Name }}
 spec:
   type: {{ .Values.backend.service.type }}
   selector:
